@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:uuid/uuid.dart';
+// uuid removed - overlays/features simplified
 import 'package:video_player/video_player.dart';
 
 import '../../auth/data/auth_controller.dart';
@@ -13,6 +13,7 @@ import '../../feed/domain/feed_content.dart';
 import '../data/create_content_service.dart';
 import '../domain/create_post_request.dart';
 import 'widgets/media_composer_support.dart';
+import 'publish_post_screen.dart';
 
 class CreatePostScreen extends ConsumerStatefulWidget {
   const CreatePostScreen({super.key});
@@ -24,7 +25,6 @@ class CreatePostScreen extends ConsumerStatefulWidget {
 }
 
 class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
-  static const _uuid = Uuid();
   static const _defaultVideoAspectRatio = 9 / 16;
 
   final ImagePicker _picker = ImagePicker();
@@ -37,7 +37,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   VideoPlayerController? _videoController;
   Future<void>? _videoInitialization;
 
-  final List<EditableOverlay> _overlays = <EditableOverlay>[];
+  // overlays removed - using full-screen editor instead
   final Set<String> _selectedTags = <String>{};
 
   String? _generatedCoverPath;
@@ -99,7 +99,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         child: CustomScrollView(
           slivers: [
             SliverToBoxAdapter(child: _buildMediaSection(context)),
-            SliverToBoxAdapter(child: _buildOverlaySection(context)),
+            // overlays removed: editing happens in full-screen editor after media selection
             SliverToBoxAdapter(child: _buildDescriptionSection(context)),
             SliverToBoxAdapter(
               child: Padding(
@@ -227,44 +227,29 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                 aspectRatio <= 0 ? _defaultVideoAspectRatio : aspectRatio,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(24),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  return Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      Positioned.fill(child: _buildMediaPreview()),
-                      if (_overlays.isNotEmpty)
-                        Positioned.fill(
-                          child: OverlayLayer(
-                            overlays: _overlays,
-                            onOverlayDragged: (id, delta) {
-                              _updateOverlayPosition(
-                                  id, delta, constraints.biggest);
-                            },
-                            onOverlayTapped: (overlay) {
-                              _openOverlayEditor(existing: overlay);
-                            },
-                          ),
+              child: GestureDetector(
+                onTap: () => _openMediaEditor(),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Positioned.fill(child: _buildMediaPreview()),
+                    Positioned(
+                      right: 12,
+                      top: 12,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.45),
+                          borderRadius: BorderRadius.circular(18),
                         ),
-                      Positioned(
-                        right: 12,
-                        top: 12,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.45),
-                            borderRadius: BorderRadius.circular(18),
-                          ),
-                          child: IconButton(
-                            icon: const Icon(Icons.photo_camera_back_outlined,
-                                color: Colors.white),
-                            tooltip: 'Change media',
-                            onPressed: () => _showMediaSwapSheet(context),
-                          ),
+                        child: IconButton(
+                          icon: const Icon(Icons.edit, color: Colors.white),
+                          tooltip: 'Edit media (pan/zoom)',
+                          onPressed: () => _openMediaEditor(),
                         ),
                       ),
-                    ],
-                  );
-                },
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -335,83 +320,6 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     );
   }
 
-  Widget _buildOverlaySection(BuildContext context) {
-    if (_mediaFile == null) {
-      return const SizedBox.shrink();
-    }
-
-    final theme = Theme.of(context);
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Text overlays',
-            style: theme.textTheme.titleMedium,
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Layer campaign headlines, calls to action, or quick stats. Drag to reposition and tap to edit fonts and colors.',
-            style: theme.textTheme.bodySmall,
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              FilledButton.icon(
-                onPressed: () => _openOverlayEditor(),
-                icon: const Icon(Icons.text_fields_outlined),
-                label: const Text('Add text'),
-              ),
-              if (_overlays.isNotEmpty)
-                OutlinedButton.icon(
-                  onPressed: () {
-                    setState(() => _overlays.clear());
-                  },
-                  icon: const Icon(Icons.layers_clear),
-                  label: const Text('Clear overlays'),
-                ),
-            ],
-          ),
-          if (_overlays.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            for (final overlay in _overlays)
-              Card(
-                elevation: 0,
-                color: theme.colorScheme.surfaceContainerLow,
-                child: ListTile(
-                  title: Text(
-                    overlay.text,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontFamily: overlay.fontFamily,
-                      fontWeight: overlay.fontWeight,
-                      fontStyle: overlay.fontStyle,
-                      fontSize: overlay.fontSize,
-                      color: overlay.color,
-                    ),
-                  ),
-                  subtitle: Text(
-                    'Font: ${overlay.displayFontLabel} · Color: #${overlay.color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}',
-                    style: theme.textTheme.bodySmall,
-                  ),
-                  trailing: IconButton(
-                    tooltip: 'Edit overlay',
-                    icon: const Icon(Icons.edit_outlined),
-                    onPressed: () => _openOverlayEditor(existing: overlay),
-                  ),
-                ),
-              ),
-          ],
-        ],
-      ),
-    );
-  }
-
   Widget _buildDescriptionSection(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
@@ -479,7 +387,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       _generatedCoverPath = null;
       _customCoverFile = null;
       _coverFramePosition = null;
-      _overlays.clear();
+      // overlays removed
       _mediaAspectRatio = null;
     });
 
@@ -505,7 +413,18 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
             ..play();
         });
       });
+      debugPrint('CreatePostScreen: created VideoPlayerController for ${file.path}');
     }
+
+    // After setting the media, open the full-screen editor so the user can pan/zoom/recenter
+    if (!mounted) return;
+    // If video, ensure initialized first so playback is ready in the editor
+    if (type == FeedMediaType.video) {
+      if (_videoInitialization != null) {
+        await _videoInitialization;
+      }
+    }
+    await _openMediaEditor();
   }
 
   void _disposeVideoController() {
@@ -514,131 +433,48 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     _videoInitialization = null;
   }
 
-  Future<void> _showMediaSwapSheet(BuildContext context) async {
-    final action = await showModalBottomSheet<MediaSwapAction>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('Replace with photo'),
-              onTap: () => Navigator.of(ctx).pop(MediaSwapAction.photo),
-            ),
-            ListTile(
-              leading: const Icon(Icons.video_library_outlined),
-              title: const Text('Replace with video'),
-              onTap: () => Navigator.of(ctx).pop(MediaSwapAction.video),
-            ),
-            if (_mediaFile != null)
-              ListTile(
-                leading: const Icon(Icons.delete_outline),
-                title: const Text('Remove media'),
-                onTap: () => Navigator.of(ctx).pop(MediaSwapAction.remove),
-              ),
-            const SizedBox(height: 12),
-          ],
+  // overlay positioning removed
+
+  // Full-screen media editor: pan/zoom/recenter with guide lines
+  Future<void> _openMediaEditor() async {
+    if (_mediaFile == null || _mediaType == null) return;
+
+    final request = await Navigator.of(context).push<CreatePostRequest>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (ctx) => PublishPostScreen(
+          mediaPath: _mediaFile!.path,
+          mediaType: _mediaType!,
+          aspectRatio: _mediaAspectRatio ?? _defaultVideoAspectRatio,
         ),
       ),
     );
 
-    switch (action) {
-      case MediaSwapAction.photo:
-        await _pickImage();
-        break;
-      case MediaSwapAction.video:
-        await _pickVideo();
-        break;
-      case MediaSwapAction.remove:
-        setState(() {
-          _mediaFile = null;
-          _mediaType = null;
-          _overlays.clear();
-          _generatedCoverPath = null;
-          _customCoverFile = null;
-          _coverFramePosition = null;
-        });
-        _disposeVideoController();
-        break;
-      case null:
-        break;
-    }
-  }
+    if (request == null) return;
 
-  void _updateOverlayPosition(
-    String id,
-    Offset delta,
-    Size canvasSize,
-  ) {
-    final overlayIndex = _overlays.indexWhere((element) => element.id == id);
-    if (overlayIndex == -1) {
-      return;
-    }
-    final overlay = _overlays[overlayIndex];
-    if (canvasSize.width == 0 || canvasSize.height == 0) {
+    // When publish screen returns a CreatePostRequest, submit it using current user
+    final authState = ref.read(authControllerProvider);
+    final user = authState.user;
+    if (user == null) {
+      _showError('Sign in to share a story.');
       return;
     }
 
-    final dx = delta.dx / canvasSize.width;
-    final dy = delta.dy / canvasSize.height;
-
-    final next = overlay.copyWith(
-      position: Offset(
-        (overlay.position.dx + dx).clamp(0.0, 1.0),
-        (overlay.position.dy + dy).clamp(0.0, 1.0),
-      ),
-    );
-
-    setState(() => _overlays[overlayIndex] = next);
-  }
-
-  Future<void> _openOverlayEditor({EditableOverlay? existing}) async {
-    final initial = existing ??
-        EditableOverlay(
-          id: _uuid.v4(),
-          text: 'Campaign message',
-          color: Colors.white,
-          fontFamily: overlayFontOptions.first.fontFamily,
-          fontLabel: overlayFontOptions.first.label,
-          fontWeight: overlayFontOptions.first.fontWeight,
-          fontStyle: overlayFontOptions.first.fontStyle,
-          fontSize: 24,
-          position: const Offset(0.4, 0.35),
-        );
-
-    final result = await showModalBottomSheet<OverlayEditorResult>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (ctx) => OverlayEditorSheet(
-        initial: initial,
-        allowDelete: existing != null,
-      ),
-    );
-
-    if (result == null) {
-      return;
+    setState(() => _isSubmitting = true);
+    try {
+      final newContentId = await ref
+          .read(createContentServiceProvider)
+          .createPost(request, author: user);
+      if (!mounted) return;
+      Navigator.of(context).pop(newContentId);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Post published to the feed.')),
+      );
+    } catch (error) {
+      _showError('We could not publish your post. Please try again.');
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
     }
-
-    if (result.delete && existing != null) {
-      setState(
-          () => _overlays.removeWhere((element) => element.id == existing.id));
-      return;
-    }
-
-    final overlay = result.overlay;
-    if (overlay == null) return;
-
-    setState(() {
-      final index = _overlays.indexWhere((element) => element.id == overlay.id);
-      if (index == -1) {
-        _overlays.add(overlay);
-      } else {
-        _overlays[index] = overlay;
-      }
-    });
   }
 
   Future<void> _openCoverEditor() async {
@@ -729,19 +565,8 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
 
     final description = _descriptionController.text.trim();
 
-    final overlays = [
-      for (final overlay in _overlays)
-        FeedTextOverlay(
-          id: overlay.id,
-          text: overlay.text,
-          color: overlay.color,
-          fontFamily: overlay.fontFamily,
-          fontWeight: overlay.fontWeight,
-          fontStyle: overlay.fontStyle,
-          fontSize: overlay.fontSize,
-          position: overlay.position,
-        ),
-    ];
+    // overlays removed - send empty list
+    final overlays = <FeedTextOverlay>[];
 
     final request = CreatePostRequest(
       mediaPath: _mediaFile!.path,
