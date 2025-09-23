@@ -95,10 +95,19 @@ class _MediaComposerScreenState extends State<MediaComposerScreen> {
     _videoController = controller;
   }
 
+  double _resolveCanvasAspectRatio() {
+    final initial = widget.initialAspectRatio;
+    final hasValidInitial = initial.isFinite && initial > 0;
+    final baseline = hasValidInitial ? initial : (9 / 16);
+    if (widget.mediaType == FeedMediaType.video && baseline > 1) {
+      return 1 / baseline;
+    }
+    return baseline;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final aspectRatio =
-        widget.initialAspectRatio <= 0 ? (9 / 16) : widget.initialAspectRatio;
+    final aspectRatio = _resolveCanvasAspectRatio();
 
     return Scaffold(
       backgroundColor: Colors.black,
