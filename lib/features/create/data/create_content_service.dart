@@ -52,6 +52,7 @@ class CreateContentService {
       tags: request.tags.toSet(),
       interactionStats: const FeedInteractionStats(),
       overlays: request.overlays,
+      compositionTransform: request.compositionTransform,
     );
 
     _ref.read(feedContentStoreProvider.notifier).addContent(content);

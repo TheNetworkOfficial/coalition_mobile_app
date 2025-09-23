@@ -57,6 +57,7 @@ class FeedContent extends Equatable {
     this.tags = const <String>{},
     this.interactionStats = const FeedInteractionStats(),
     this.overlays = const <FeedTextOverlay>[],
+    this.compositionTransform,
     this.associatedCandidateIds = const <String>{},
     this.associatedEventIds = const <String>{},
     this.relatedCreatorIds = const <String>{},
@@ -85,6 +86,7 @@ class FeedContent extends Equatable {
   final double? distanceHint;
   final bool isPromoted;
   final List<FeedTextOverlay> overlays;
+  final List<double>? compositionTransform;
 
   bool get isVideo => mediaType == FeedMediaType.video;
   bool get isImage => mediaType == FeedMediaType.image;
@@ -109,6 +111,7 @@ class FeedContent extends Equatable {
     double? distanceHint,
     bool? isPromoted,
     List<FeedTextOverlay>? overlays,
+    Object? compositionTransform = _sentinel,
   }) {
     return FeedContent(
       id: id,
@@ -136,6 +139,9 @@ class FeedContent extends Equatable {
       distanceHint: distanceHint ?? this.distanceHint,
       isPromoted: isPromoted ?? this.isPromoted,
       overlays: overlays ?? this.overlays,
+      compositionTransform: compositionTransform == _sentinel
+          ? this.compositionTransform
+          : compositionTransform as List<double>?,
     );
   }
 
@@ -163,6 +169,7 @@ class FeedContent extends Equatable {
         distanceHint,
         isPromoted,
         overlays,
+        compositionTransform,
       ];
 }
 

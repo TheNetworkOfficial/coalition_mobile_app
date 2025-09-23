@@ -12,6 +12,7 @@ class CreatePostRequest extends Equatable {
     this.coverImagePath,
     this.coverFramePosition,
     this.overlays = const <FeedTextOverlay>[],
+    this.compositionTransform,
   });
 
   final String mediaPath;
@@ -22,6 +23,7 @@ class CreatePostRequest extends Equatable {
   final String? coverImagePath;
   final Duration? coverFramePosition;
   final List<FeedTextOverlay> overlays;
+  final List<double>? compositionTransform;
 
   bool get isVideo => mediaType == FeedMediaType.video;
 
@@ -35,5 +37,6 @@ class CreatePostRequest extends Equatable {
         coverImagePath,
         coverFramePosition?.inMilliseconds,
         overlays,
+        compositionTransform,
       ];
 }
