@@ -13,6 +13,7 @@ import '../../events/data/event_providers.dart';
 import '../../events/domain/event.dart';
 import '../data/candidate_account_request_controller.dart';
 import '../data/user_content_provider.dart';
+import '../../feed/presentation/post_viewer_screen.dart';
 import '../data/profile_connections_provider.dart';
 import '../domain/candidate_account_request.dart';
 import '../domain/profile_connection.dart';
@@ -623,6 +624,20 @@ class _UserContentTile extends StatelessWidget {
             )
           else
             _ContentPlaceholder(title: content.title),
+          // make the tile tappable to open the post viewer (expands like feed)
+          Positioned.fill(
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () {
+                  Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => PostViewerScreen(initialContentId: content.id),
+                    fullscreenDialog: true,
+                  ));
+                },
+              ),
+            ),
+          ),
           Align(
             alignment: Alignment.bottomLeft,
             child: Container(

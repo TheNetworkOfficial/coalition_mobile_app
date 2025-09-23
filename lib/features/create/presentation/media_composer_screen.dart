@@ -1,8 +1,11 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:uuid/uuid.dart';
 import 'package:video_player/video_player.dart';
+import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import '../../feed/domain/feed_content.dart';
 import 'widgets/media_composer_support.dart';
@@ -12,11 +15,13 @@ class MediaCompositionResult {
     required this.transformValues,
     required this.overlays,
     required this.aspectRatio,
+    this.bakedFilePath,
   });
 
   final List<double> transformValues;
   final List<EditableOverlay> overlays;
   final double aspectRatio;
+  final String? bakedFilePath;
 }
 
 class MediaComposerScreen extends StatefulWidget {
@@ -45,6 +50,9 @@ class _MediaComposerScreenState extends State<MediaComposerScreen> {
 
   final TransformationController _transformationController =
       TransformationController();
+
+  // Key used to capture the editor contents to an image.
+  final GlobalKey _composerKey = GlobalKey();
 
   final List<EditableOverlay> _overlays = <EditableOverlay>[];
 
@@ -110,7 +118,8 @@ class _MediaComposerScreenState extends State<MediaComposerScreen> {
             onPressed: _onNextPressed,
             child: const Text(
               'Next',
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+              style:
+                  TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
             ),
           ),
         ],
@@ -130,8 +139,10 @@ class _MediaComposerScreenState extends State<MediaComposerScreen> {
                       children: [
                         Positioned.fill(
                           child: GestureDetector(
-                            onTap: () => setState(() => _showGuides = !_showGuides),
+                            onTap: () =>
+                                setState(() => _showGuides = !_showGuides),
                             child: RepaintBoundary(
+                              key: _composerKey,
                               child: Stack(
                                 fit: StackFit.expand,
                                 children: [
@@ -164,7 +175,10 @@ class _MediaComposerScreenState extends State<MediaComposerScreen> {
                                             delta,
                                             constraints.biggest,
                                           ),
-                                          onOverlayTapped: _openOverlayEditor,
+                                          onOverlayTapped: (overlay) {
+                                            _openOverlayEditor(
+                                                existing: overlay);
+                                          },
                                         );
                                       },
                                     ),
@@ -231,13 +245,30 @@ class _MediaComposerScreenState extends State<MediaComposerScreen> {
             if (!controller.value.isPlaying) {
               controller.play();
             }
+            final videoSize = controller.value.size;
+            final isLandscape = videoSize.width > videoSize.height;
+            Widget player;
+            if (isLandscape) {
+              // rotate landscape source into portrait container
+              player = Transform.rotate(
+                angle: math.pi / 2,
+                child: SizedBox(
+                  width: videoSize.height,
+                  height: videoSize.width,
+                  child: VideoPlayer(controller),
+                ),
+              );
+            } else {
+              player = SizedBox(
+                width: videoSize.width,
+                height: videoSize.height,
+                child: VideoPlayer(controller),
+              );
+            }
+
             return FittedBox(
               fit: BoxFit.cover,
-              child: SizedBox(
-                width: controller.value.size.width,
-                height: controller.value.size.height,
-                child: VideoPlayer(controller),
-              ),
+              child: player,
             );
           },
         );
@@ -389,7 +420,9 @@ class _MediaComposerScreenState extends State<MediaComposerScreen> {
     });
   }
 
-  void _onNextPressed() {
+  Future<void> _onNextPressed() async {
+    final bakedPath = await _captureComposedImage();
+    if (!mounted) return;
     final matrix =
         List<double>.unmodifiable(_transformationController.value.storage);
     Navigator.of(context).pop(
@@ -397,8 +430,29 @@ class _MediaComposerScreenState extends State<MediaComposerScreen> {
         transformValues: matrix,
         overlays: List<EditableOverlay>.unmodifiable(_overlays),
         aspectRatio: widget.initialAspectRatio,
+        bakedFilePath: bakedPath,
       ),
     );
+  }
+
+  Future<String?> _captureComposedImage() async {
+    try {
+      final boundary = _composerKey.currentContext?.findRenderObject()
+          as RenderRepaintBoundary?;
+      if (boundary == null) return null;
+      final ui.Image image = await boundary.toImage(
+          pixelRatio: MediaQuery.of(context).devicePixelRatio);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) return null;
+      final bytes = byteData.buffer.asUint8List();
+      final tmp = Directory.systemTemp.createTempSync('coalition_bake_');
+      final file = File(
+          '${tmp.path}/baked_${DateTime.now().millisecondsSinceEpoch}.png');
+      await file.writeAsBytes(bytes);
+      return file.path;
+    } catch (_) {
+      return null;
+    }
   }
 }
 
@@ -462,11 +516,11 @@ class _GuideOverlayPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final primary = Paint()
-      ..color = Colors.white.withOpacity(0.6)
+      ..color = Colors.white.withValues(alpha: 0.6)
       ..strokeWidth = 1;
 
     final secondary = Paint()
-      ..color = Colors.white.withOpacity(0.35)
+      ..color = Colors.white.withValues(alpha: 0.35)
       ..strokeWidth = 1;
 
     final midX = size.width / 2;

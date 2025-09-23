@@ -12,6 +12,7 @@ import '../domain/app_user.dart';
 import '../domain/auth_state.dart';
 import 'local_user_store.dart';
 import '../../profile/data/profile_connections_provider.dart';
+import '../../feed/data/feed_content_store.dart';
 
 class AuthCredentials {
   AuthCredentials({
@@ -52,11 +53,9 @@ class GoogleSignInResult {
   final String? lastName;
   final String? message;
 
-  const GoogleSignInResult.signedIn()
-      : this._(GoogleSignInStatus.signedIn);
+  const GoogleSignInResult.signedIn() : this._(GoogleSignInStatus.signedIn);
 
-  const GoogleSignInResult.cancelled()
-      : this._(GoogleSignInStatus.cancelled);
+  const GoogleSignInResult.cancelled() : this._(GoogleSignInStatus.cancelled);
 
   const GoogleSignInResult.failure(String message)
       : this._(GoogleSignInStatus.failure, message: message);
@@ -74,11 +73,12 @@ class GoogleSignInResult {
 }
 
 class AuthController extends StateNotifier<AuthState> {
-  AuthController(this._store, this._googleSignIn)
+  AuthController(this._ref, this._store, this._googleSignIn)
       : super(const AuthState(isLoading: true)) {
     _initialization = _initialize();
   }
 
+  final Ref _ref;
   final LocalUserStore _store;
   final GoogleSignIn _googleSignIn;
 
@@ -348,6 +348,27 @@ class AuthController extends StateNotifier<AuthState> {
       updated.add(contentId);
     }
     await _updateActiveUser(user.copyWith(likedContentIds: updated));
+
+    // Also update the feed content store so UI that displays counts updates
+    try {
+      final catalog = _ref.read(feedContentCatalogProvider);
+      final index = catalog.indexWhere((c) => c.id == contentId);
+      if (index != -1) {
+        final existing = catalog[index];
+        final currentlyLiked = updated.contains(contentId);
+        final likesDelta = currentlyLiked ? 1 : -1;
+        final newLikes =
+            (existing.interactionStats.likes + likesDelta).clamp(0, 1 << 30);
+        final updatedStats =
+            existing.interactionStats.copyWith(likes: newLikes);
+        _ref
+            .read(feedContentStoreProvider.notifier)
+            .updateContent(existing.copyWith(interactionStats: updatedStats));
+      }
+    } catch (e) {
+      // Non-fatal - leave user likes updated even if feed update fails
+      debugPrint('Failed to update feed content likes: $e');
+    }
   }
 
   Future<void> recordEventRsvp({
@@ -439,7 +460,8 @@ class AuthController extends StateNotifier<AuthState> {
           final nextAllowed = lastChange.add(const Duration(days: 30));
           if (now.isBefore(nextAllowed)) {
             final remaining = nextAllowed.difference(now);
-            final remainingDays = remaining.inDays + (remaining.inHours % 24 > 0 ? 1 : 0);
+            final remainingDays =
+                remaining.inDays + (remaining.inHours % 24 > 0 ? 1 : 0);
             final message = remainingDays > 0
                 ? 'You can change your username again in $remainingDays day${remainingDays == 1 ? '' : 's'}.'
                 : 'You can change your username again soon. Please try again later.';
@@ -460,8 +482,7 @@ class AuthController extends StateNotifier<AuthState> {
       lastName: trimmedLast ?? user.lastName,
       username: trimmedUsername ?? user.username,
       bio: trimmedBio ?? user.bio,
-      lastUsernameChangeAt:
-          usernameChanged ? now : user.lastUsernameChangeAt,
+      lastUsernameChangeAt: usernameChanged ? now : user.lastUsernameChangeAt,
     );
 
     await _updateActiveUser(updatedUser);
@@ -494,7 +515,8 @@ class AuthController extends StateNotifier<AuthState> {
 
   Future<void> _updateActiveUser(AppUser updatedUser) async {
     state = AuthState(user: updatedUser);
-    final index = _users.indexWhere((record) => record.user.id == updatedUser.id);
+    final index =
+        _users.indexWhere((record) => record.user.id == updatedUser.id);
     if (index == -1) return;
     final existing = _users[index];
     _users[index] = StoredUserRecord(
@@ -520,7 +542,8 @@ class AuthController extends StateNotifier<AuthState> {
   StoredUserRecord? _findByIdentifier(String input) {
     final normalized = input.toLowerCase();
     return _users.firstWhereOrNull(
-      (record) => record.user.email.toLowerCase() == normalized ||
+      (record) =>
+          record.user.email.toLowerCase() == normalized ||
           record.user.username.toLowerCase() == normalized,
     );
   }
@@ -621,5 +644,5 @@ final authControllerProvider =
     StateNotifierProvider<AuthController, AuthState>((ref) {
   final store = ref.watch(localUserStoreProvider);
   final googleSignIn = ref.watch(googleSignInProvider);
-  return AuthController(store, googleSignIn);
+  return AuthController(ref, store, googleSignIn);
 });

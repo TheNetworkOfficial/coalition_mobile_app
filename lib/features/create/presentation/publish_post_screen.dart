@@ -2,32 +2,182 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:video_player/video_player.dart';
-
-import '../../auth/data/auth_controller.dart';
 import '../../candidates/data/candidate_providers.dart';
-import '../../feed/domain/feed_content.dart';
-import '../data/create_content_service.dart';
+import '../presentation/widgets/static_transform_view.dart';
+
 import '../domain/create_post_request.dart';
+import '../../feed/domain/feed_content.dart';
 import 'widgets/media_composer_support.dart';
-import 'widgets/static_transform_view.dart';
+
+class EditedMediaResult {
+  const EditedMediaResult();
+}
+
+class _FullscreenMediaEditor extends StatefulWidget {
+  const _FullscreenMediaEditor({
+    required this.mediaPath,
+    required this.mediaType,
+    required this.aspectRatio,
+  });
+
+  final String mediaPath;
+  final FeedMediaType mediaType;
+  final double aspectRatio;
+  // no controller required here
+
+  @override
+  State<_FullscreenMediaEditor> createState() => _FullscreenMediaEditorState();
+}
+
+class _FullscreenMediaEditorState extends State<_FullscreenMediaEditor> {
+  final TransformationController _transformationController =
+      TransformationController();
+  bool _showGuides = false;
+
+  @override
+  void dispose() {
+    _transformationController.dispose();
+    super.dispose();
+  }
+
+  void _toggleGuides(bool show) {
+    setState(() => _showGuides = show);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Edit media'),
+        actions: [
+          IconButton(
+            tooltip: 'Next',
+            icon: const Icon(Icons.arrow_forward),
+            onPressed: () async {
+              // go to publish screen
+              final localContext = context;
+              final result =
+                  await Navigator.of(localContext).push<CreatePostRequest>(
+                MaterialPageRoute(
+                  builder: (ctx) => PublishPostScreen(
+                      mediaPath: widget.mediaPath,
+                      mediaType: widget.mediaType,
+                      aspectRatio: widget.aspectRatio),
+                ),
+              );
+              if (result != null) {
+                // return the CreatePostRequest to the original caller
+                if (!localContext.mounted) return;
+                Navigator.of(localContext).pop(const EditedMediaResult());
+                // but posting itself is handled by CreatePostScreen after receiving the request
+              }
+            },
+          ),
+        ],
+      ),
+      body: Center(
+        child: LayoutBuilder(builder: (context, constraints) {
+          return GestureDetector(
+            onPanDown: (_) => _toggleGuides(true),
+            onPanEnd: (_) => _toggleGuides(false),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                InteractiveViewer(
+                  transformationController: _transformationController,
+                  clipBehavior: Clip.none,
+                  minScale: 0.5,
+                  maxScale: 4.0,
+                  child: AspectRatio(
+                    aspectRatio:
+                        widget.aspectRatio <= 0 ? 1 : widget.aspectRatio,
+                    child: ClipRect(
+                      child:
+                          Image.file(File(widget.mediaPath), fit: BoxFit.cover),
+                    ),
+                  ),
+                ),
+                // Guide lines
+                if (_showGuides) ...[
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: CustomPaint(
+                        painter: _GuideLinesPainter(),
+                      ),
+                    ),
+                  ),
+                ],
+                // center indicator
+                Positioned(
+                  right: 12,
+                  bottom: 12,
+                  child: FloatingActionButton.small(
+                    onPressed: () {
+                      // recenter
+                      _transformationController.value = Matrix4.identity();
+                    },
+                    child: const Icon(Icons.center_focus_strong),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+      ),
+    );
+  }
+}
+
+class _GuideLinesPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.7)
+      ..strokeWidth = 1.0;
+
+    // vertical center
+    final vx = size.width / 2;
+    canvas.drawLine(Offset(vx, 0), Offset(vx, size.height), paint);
+    // horizontal center
+    final hy = size.height / 2;
+    canvas.drawLine(Offset(0, hy), Offset(size.width, hy), paint);
+    // mid vertical thirds
+    final v1 = size.width / 3;
+    final v2 = 2 * size.width / 3;
+    final h1 = size.height / 3;
+    final h2 = 2 * size.height / 3;
+    canvas.drawLine(Offset(v1, 0), Offset(v1, size.height),
+        paint..color = Colors.white.withValues(alpha: 0.35));
+    canvas.drawLine(Offset(v2, 0), Offset(v2, size.height),
+        paint..color = Colors.white.withValues(alpha: 0.35));
+    canvas.drawLine(Offset(0, h1), Offset(size.width, h1),
+        paint..color = Colors.white.withValues(alpha: 0.35));
+    canvas.drawLine(Offset(0, h2), Offset(size.width, h2),
+        paint..color = Colors.white.withValues(alpha: 0.35));
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
 
 class PublishPostScreen extends ConsumerStatefulWidget {
   const PublishPostScreen({
     required this.mediaPath,
     required this.mediaType,
     required this.aspectRatio,
-    required this.composition,
-    required this.initialOverlays,
+    this.composition,
+    this.initialOverlays,
+    this.overrideMediaPath,
     super.key,
   });
 
   final String mediaPath;
   final FeedMediaType mediaType;
   final double aspectRatio;
-  final List<double> composition;
-  final List<EditableOverlay> initialOverlays;
+  final List<double>? composition;
+  final List<EditableOverlay>? initialOverlays;
+  final String? overrideMediaPath;
+  // controller removed - playback not required on publish screen
 
   @override
   ConsumerState<PublishPostScreen> createState() => _PublishPostScreenState();
@@ -35,417 +185,167 @@ class PublishPostScreen extends ConsumerStatefulWidget {
 
 class _PublishPostScreenState extends ConsumerState<PublishPostScreen> {
   final TextEditingController _descriptionController = TextEditingController();
-  final Set<String> _selectedTags = <String>{};
-
-  VideoPlayerController? _videoController;
-  Future<void>? _videoInitialization;
-
-  String? _generatedCoverPath;
-  XFile? _customCoverFile;
-  Duration? _coverFramePosition;
-  bool _isGeneratingCover = false;
-  bool _isPosting = false;
-
-  late List<EditableOverlay> _overlays;
-
-  @override
-  void initState() {
-    super.initState();
-    _overlays = List<EditableOverlay>.from(widget.initialOverlays);
-    if (widget.mediaType == FeedMediaType.video) {
-      _initializeVideo();
-    }
-  }
+  final Set<String> _selectedTags = {};
+  final bool _isPosting = false;
 
   @override
   void dispose() {
     _descriptionController.dispose();
-    _videoController?.dispose();
     super.dispose();
-  }
-
-  void _initializeVideo() {
-    final controller = VideoPlayerController.file(File(widget.mediaPath))
-      ..setLooping(true)
-      ..setVolume(0);
-    _videoInitialization = controller.initialize().then((_) {
-      if (mounted) {
-        setState(() {
-          controller.play();
-        });
-      }
-    });
-    _videoController = controller;
   }
 
   @override
   Widget build(BuildContext context) {
-    final candidateTagsAsync = ref.watch(candidateTagsProvider);
-    final candidateTags = candidateTagsAsync.maybeWhen(
-      data: (value) => value,
-      orElse: () => const <String>[],
-    );
+    // We avoid doing heavy integration here; parent will perform the actual post
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Post details'),
-        actions: [
-          TextButton(
-            onPressed: _isPosting ? null : _handleSubmit,
-            child: _isPosting
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2.2),
-                  )
-                : const Text('Post'),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('Publish')),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.only(bottom: 24),
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: AspectRatio(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 12),
+              AspectRatio(
                 aspectRatio: widget.aspectRatio <= 0 ? 1 : widget.aspectRatio,
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(28),
+                  borderRadius: BorderRadius.circular(12),
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      _buildPreview(),
-                      if (_overlays.isNotEmpty)
-                        Positioned.fill(
-                          child: _PreviewOverlayLayer(overlays: _overlays),
+                      // If an override (baked) media path is provided the image
+                      // already includes overlays baked into it. In that case we
+                      // should not draw the editable overlay layer on top again
+                      // (this caused the duplicated text). Otherwise render the
+                      // transform + overlay preview as before.
+                      Image.file(File(widget.overrideMediaPath ?? widget.mediaPath), fit: BoxFit.cover),
+                      if (widget.overrideMediaPath == null &&
+                          (widget.composition != null ||
+                              (widget.initialOverlays?.isNotEmpty ?? false)))
+                        StaticTransformView(
+                          transformValues: widget.composition,
+                          child: Container(
+                            color: Colors.transparent,
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                // transparent child so the StaticTransformView applies
+                                const SizedBox.shrink(),
+                                OverlayLayer(
+                                  overlays: widget.initialOverlays ?? const [],
+                                  onOverlayDragged: (_, __) {},
+                                  onOverlayTapped: (_) {},
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
                     ],
                   ),
                 ),
               ),
-            ),
-            if (widget.mediaType == FeedMediaType.video)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: OutlinedButton.icon(
-                  onPressed: _isGeneratingCover ? null : _openCoverEditor,
-                  icon: _isGeneratingCover
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.photo_album_outlined),
-                  label: Text(
-                    _customCoverFile != null || _generatedCoverPath != null
-                        ? 'Update cover image'
-                        : 'Edit cover image',
-                  ),
-                ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _descriptionController,
+                maxLines: 5,
+                decoration:
+                    const InputDecoration(hintText: 'Write a description...'),
               ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  TextField(
-                    controller: _descriptionController,
-                    maxLines: 4,
-                    textCapitalization: TextCapitalization.sentences,
-                    decoration: const InputDecoration(
-                      labelText: 'Write a caption',
-                      hintText: 'Share context, credits, or a call to action.',
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Text(
-                    'Campaign tags',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 12),
-                  if (candidateTagsAsync.isLoading)
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 16),
-                      child: Center(
-                        child: CircularProgressIndicator(strokeWidth: 2),
+              const SizedBox(height: 12),
+              Consumer(builder: (context, ref, _) {
+                final tagsAsync = ref.watch(candidateTagsProvider);
+                final candidateTags = tagsAsync.maybeWhen(
+                  data: (value) => value,
+                  orElse: () => const <String>[],
+                );
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Tags',
+                        style: Theme.of(context).textTheme.titleMedium),
+                    const SizedBox(height: 8),
+                    if (candidateTags.isEmpty)
+                      Text('No tags available',
+                          style: Theme.of(context).textTheme.bodySmall)
+                    else
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          for (final tag in candidateTags)
+                            FilterChip(
+                              label: Text(tag),
+                              selected: _selectedTags.contains(tag),
+                              onSelected: _selectedTags.length >= 3 &&
+                                      !_selectedTags.contains(tag)
+                                  ? null
+                                  : (selected) {
+                                      setState(() {
+                                        if (selected) {
+                                          _selectedTags.add(tag);
+                                        } else {
+                                          _selectedTags.remove(tag);
+                                        }
+                                      });
+                                    },
+                              disabledColor: Colors.white10,
+                            ),
+                        ],
                       ),
-                    )
-                  else if (candidateTags.isEmpty)
-                    Text(
-                      'Tags help voters discover your story once your campaign team adds them.',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    )
-                  else
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 10,
-                      children: [
-                        for (final tag in candidateTags)
-                          FilterChip(
-                            label: Text(tag),
-                            selected: _selectedTags.contains(tag),
-                            onSelected: (value) => setState(() {
-                              if (value) {
-                                _selectedTags.add(tag);
-                              } else {
-                                _selectedTags.remove(tag);
-                              }
-                            }),
-                          ),
-                      ],
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPreview() {
-    final transform = widget.composition;
-    final aspectRatio = widget.aspectRatio <= 0 ? 1.0 : widget.aspectRatio;
-
-    return StaticTransformView(
-      transformValues: transform,
-      child: AspectRatio(
-        aspectRatio: aspectRatio,
-        child: _buildMediaForPreview(),
-      ),
-    );
-  }
-
-  Widget _buildMediaForPreview() {
-    switch (widget.mediaType) {
-      case FeedMediaType.image:
-        return Image.file(
-          File(widget.mediaPath),
-          fit: BoxFit.cover,
-        );
-      case FeedMediaType.video:
-        final controller = _videoController;
-        if (controller == null) {
-          return const ColoredBox(color: Colors.black);
-        }
-        return FutureBuilder<void>(
-          future: _videoInitialization,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState != ConnectionState.done) {
-              return const ColoredBox(
-                color: Colors.black,
-                child: Center(child: CircularProgressIndicator()),
-              );
-            }
-            if (!controller.value.isPlaying) {
-              controller.play();
-            }
-            return FittedBox(
-              fit: BoxFit.cover,
-              child: SizedBox(
-                width: controller.value.size.width,
-                height: controller.value.size.height,
-                child: VideoPlayer(controller),
-              ),
-            );
-          },
-        );
-    }
-  }
-
-  Future<void> _openCoverEditor() async {
-    final controller = _videoController;
-    if (controller == null) return;
-
-    await controller.pause();
-
-    if (!mounted) return;
-    final result = await showModalBottomSheet<CoverEditorResult>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (ctx) => CoverEditorSheet(
-        controller: controller,
-        initialFrame: _coverFramePosition,
-        initialCustomCoverPath: _customCoverFile?.path,
-      ),
-    );
-
-    if (result == null) {
-      if (!mounted) return;
-      await controller.play();
-      return;
-    }
-
-    if (result.clear) {
-      setState(() {
-        _generatedCoverPath = null;
-        _customCoverFile = null;
-        _coverFramePosition = null;
-      });
-      if (!mounted) return;
-      await controller.play();
-      return;
-    }
-
-    if (result.customCoverPath != null) {
-      setState(() {
-        _customCoverFile = XFile(result.customCoverPath!);
-        _generatedCoverPath = null;
-        _coverFramePosition = null;
-      });
-      if (!mounted) return;
-      await controller.play();
-      return;
-    }
-
-    if (result.framePosition != null) {
-      setState(() {
-        _coverFramePosition = result.framePosition;
-        _isGeneratingCover = true;
-      });
-      try {
-        final generated = await ref
-            .read(createContentServiceProvider)
-            .generateCoverFromVideo(
-              videoPath: widget.mediaPath,
-              position: result.framePosition!,
-            );
-        if (!mounted) return;
-        setState(() {
-          _generatedCoverPath = generated;
-          _customCoverFile = null;
-        });
-      } catch (error) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('We could not save that frame as a cover.')),
-        );
-      } finally {
-        if (mounted) {
-          setState(() => _isGeneratingCover = false);
-        }
-      }
-      if (!mounted) return;
-      await controller.play();
-      return;
-    }
-
-    if (!mounted) return;
-    await controller.play();
-  }
-
-  Future<void> _handleSubmit() async {
-    if (_isPosting) return;
-
-    final authState = ref.read(authControllerProvider);
-    final user = authState.user;
-    if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Sign in to publish your story.')),
-      );
-      return;
-    }
-
-    final description = _descriptionController.text.trim();
-    final overlays = _overlays
-        .map(
-          (overlay) => FeedTextOverlay(
-            id: overlay.id,
-            text: overlay.text,
-            color: overlay.color,
-            backgroundColor: overlay.backgroundColor,
-            fontFamily: overlay.fontFamily,
-            fontWeight: overlay.fontWeight,
-            fontStyle: overlay.fontStyle,
-            fontSize: overlay.fontSize,
-            position: overlay.position,
+                    const SizedBox(height: 8),
+                    Text('You may select up to 3 tags',
+                        style: Theme.of(context).textTheme.bodySmall),
+                  ],
+                );
+              }),
+              const SizedBox(height: 96),
+            ],
           ),
-        )
-        .toList();
-
-    final request = CreatePostRequest(
-      mediaPath: widget.mediaPath,
-      mediaType: widget.mediaType,
-      description: description,
-      tags: _selectedTags.toList(),
-      aspectRatio: widget.aspectRatio,
-      coverImagePath: _customCoverFile?.path ?? _generatedCoverPath,
-      coverFramePosition: _coverFramePosition,
-      overlays: overlays,
-      compositionTransform: List<double>.unmodifiable(widget.composition),
-    );
-
-    setState(() => _isPosting = true);
-
-    try {
-      final newContentId = await ref
-          .read(createContentServiceProvider)
-          .createPost(request, author: user);
-      if (!mounted) return;
-      Navigator.of(context).pop(newContentId);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Post published to the feed.')),
-      );
-    } catch (error, stackTrace) {
-      debugPrint('Failed to publish post: $error\n$stackTrace');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('We could not publish your post. Please try again.'),
         ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _isPosting = false);
-      }
-    }
-  }
-}
-
-class _PreviewOverlayLayer extends StatelessWidget {
-  const _PreviewOverlayLayer({required this.overlays});
-
-  final List<EditableOverlay> overlays;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return Stack(
-          children: [
-            for (final overlay in overlays)
-              Positioned(
-                left: overlay.position.dx.clamp(0.0, 1.0) * constraints.maxWidth,
-                top: overlay.position.dy.clamp(0.0, 1.0) * constraints.maxHeight,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: overlay.backgroundColor,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    child: Text(
-                      overlay.text,
-                      style: TextStyle(
-                        color: overlay.color,
-                        fontFamily: overlay.fontFamily,
-                        fontWeight: overlay.fontWeight,
-                        fontStyle: overlay.fontStyle,
-                        fontSize: overlay.fontSize,
-                        height: 1.1,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        );
-      },
+      ),
+      bottomNavigationBar: SafeArea(
+        minimum: const EdgeInsets.all(12),
+        child: SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: _isPosting
+                ? null
+                : () {
+                    final request = CreatePostRequest(
+                      mediaPath: widget.overrideMediaPath ?? widget.mediaPath,
+                      mediaType: widget.mediaType,
+                      description: _descriptionController.text.trim(),
+                      tags: _selectedTags.toList(),
+                      aspectRatio: widget.aspectRatio,
+                      coverImagePath: null,
+                      coverFramePosition: null,
+                      overlays: (widget.initialOverlays
+                              ?.map((e) => FeedTextOverlay(
+                                    id: e.id,
+                                    text: e.text,
+                                    color: e.color,
+                                    position: e.position,
+                                    fontFamily: e.fontFamily,
+                                    fontWeight: e.fontWeight,
+                                    fontStyle: e.fontStyle,
+                                    fontSize: e.fontSize,
+                                    backgroundColor: e.backgroundColor,
+                                  ))
+                              .toList()) ??
+                          const [],
+                      compositionTransform: widget.composition,
+                    );
+                    Navigator.of(context).pop(request);
+                  },
+            child: _isPosting
+                ? const CircularProgressIndicator()
+                : const Text('Post'),
+          ),
+        ),
+      ),
     );
   }
+
+  // PublishPostScreen only collects the CreatePostRequest and returns it to the caller.
 }
