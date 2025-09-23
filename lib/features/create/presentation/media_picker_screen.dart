@@ -29,6 +29,8 @@ class MediaPickerScreen extends StatefulWidget {
 
 class _MediaPickerScreenState extends State<MediaPickerScreen> {
   static const _pageSize = 80;
+  static const double _defaultVideoAspectRatio = 9 / 16;
+  static const double _defaultImageAspectRatio = 4 / 5;
 
   final ScrollController _gridController = ScrollController();
 
@@ -287,13 +289,7 @@ class _MediaPickerScreenState extends State<MediaPickerScreen> {
           ? FeedMediaType.video
           : FeedMediaType.image;
 
-      final width = asset.width;
-      final height = asset.height;
-      final aspectRatio = width > 0 && height > 0
-          ? width / height
-          : mediaType == FeedMediaType.video
-              ? 9 / 16
-              : 4 / 5;
+      final aspectRatio = _computeResultAspectRatio(asset);
 
       if (!mounted) return;
 
@@ -445,10 +441,23 @@ class _MediaPickerScreenState extends State<MediaPickerScreen> {
     if (asset == null) {
       return 3 / 4;
     }
-    if (asset.width == 0 || asset.height == 0) {
-      return 3 / 4;
+    if (asset.type == AssetType.video) {
+      final controller = _previewVideoController;
+      if (controller != null && controller.value.isInitialized) {
+        return _videoAspectRatioFromController(controller);
+      }
+      return _aspectRatioFromDimensions(
+        asset.width.toDouble(),
+        asset.height.toDouble(),
+        fallback: _defaultVideoAspectRatio,
+        invertIfGreaterThanOne: true,
+      );
     }
-    return asset.width / asset.height;
+    return _aspectRatioFromDimensions(
+      asset.width.toDouble(),
+      asset.height.toDouble(),
+      fallback: 3 / 4,
+    );
   }
 
   Widget _buildVideoPreview(VideoPlayerController? controller) {
@@ -478,6 +487,55 @@ class _MediaPickerScreenState extends State<MediaPickerScreen> {
     }
 
     return FittedBox(fit: BoxFit.cover, child: player);
+  }
+
+  double _computeResultAspectRatio(AssetEntity asset) {
+    if (asset.type == AssetType.video) {
+      final controller = _previewVideoController;
+      if (controller != null && controller.value.isInitialized) {
+        return _videoAspectRatioFromController(controller);
+      }
+      return _aspectRatioFromDimensions(
+        asset.width.toDouble(),
+        asset.height.toDouble(),
+        fallback: _defaultVideoAspectRatio,
+        invertIfGreaterThanOne: true,
+      );
+    }
+    return _aspectRatioFromDimensions(
+      asset.width.toDouble(),
+      asset.height.toDouble(),
+      fallback: _defaultImageAspectRatio,
+    );
+  }
+
+  double _videoAspectRatioFromController(VideoPlayerController controller) {
+    final size = controller.value.size;
+    return _aspectRatioFromDimensions(
+      size.width,
+      size.height,
+      fallback: _defaultVideoAspectRatio,
+      invertIfGreaterThanOne: true,
+    );
+  }
+
+  double _aspectRatioFromDimensions(
+    double width,
+    double height, {
+    required double fallback,
+    bool invertIfGreaterThanOne = false,
+  }) {
+    if (width <= 0 || height <= 0) {
+      return fallback;
+    }
+    final ratio = width / height;
+    if (!ratio.isFinite || ratio <= 0) {
+      return fallback;
+    }
+    if (invertIfGreaterThanOne && ratio > 1) {
+      return 1 / ratio;
+    }
+    return ratio;
   }
 
   Widget _buildFilterBar(BuildContext context) {
