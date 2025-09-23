@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../../create/presentation/widgets/static_transform_view.dart';
 import '../../../feed/domain/feed_content.dart';
 
 class FeedCard extends StatefulWidget {
@@ -495,21 +496,25 @@ class _FeedMediaState extends State<_FeedMedia> {
           } else if (!widget.isActive && controller.value.isPlaying) {
             controller.pause();
           }
-          return FittedBox(
-            fit: BoxFit.cover,
-            child: SizedBox(
-              width: controller.value.size.width,
-              height: controller.value.size.height,
-              child: VideoPlayer(controller),
+          return _wrapWithTransform(
+            FittedBox(
+              fit: BoxFit.cover,
+              child: SizedBox(
+                width: controller.value.size.width,
+                height: controller.value.size.height,
+                child: VideoPlayer(controller),
+              ),
             ),
           );
         },
       );
     }
 
-    return Image(
-      image: _imageProvider(content.mediaUrl),
-      fit: BoxFit.cover,
+    return _wrapWithTransform(
+      Image(
+        image: _imageProvider(content.mediaUrl),
+        fit: BoxFit.cover,
+      ),
     );
   }
 
@@ -564,6 +569,17 @@ class _FeedMediaState extends State<_FeedMedia> {
       return FileImage(File(uri.toFilePath()));
     }
     return FileImage(File(source));
+  }
+
+  Widget _wrapWithTransform(Widget child) {
+    final transform = widget.content.compositionTransform;
+    if (transform == null || transform.isEmpty) {
+      return child;
+    }
+    return StaticTransformView(
+      transformValues: transform,
+      child: child,
+    );
   }
 }
 
