@@ -10,6 +10,7 @@ import '../../candidates/data/candidate_providers.dart';
 import '../../candidates/domain/candidate.dart';
 import '../data/event_providers.dart';
 import '../domain/event.dart';
+import 'widgets/event_media_preview.dart';
 import 'widgets/event_rsvp_sheet.dart';
 
 const _fallbackCategoryLabel = 'Other priorities';
@@ -113,7 +114,7 @@ class _EventsFeedScreenState extends ConsumerState<EventsFeedScreen> {
   ) async {
     final user = ref.read(authControllerProvider).user;
     if (user == null) {
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Sign in to RSVP for coalition events.')),
       );
@@ -152,12 +153,12 @@ class _EventsFeedScreenState extends ConsumerState<EventsFeedScreen> {
           .read(coalitionRepositoryProvider)
           .cancelEventRsvp(eventId: event.id, userId: user.id);
       await ref.read(authControllerProvider.notifier).cancelEventRsvp(event.id);
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Your RSVP has been cancelled.')),
       );
     } catch (error) {
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -980,10 +981,26 @@ class EventCard extends StatelessWidget {
     final localStart = event.startDate.toLocal();
     final dateLabel = _formatDate(localStart);
     final timeLabel = _formatTime(localStart);
+    final media = event.mediaUrl;
+
+    Widget? mediaSection;
+    if (media != null && media.isNotEmpty) {
+      mediaSection = Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: EventMediaPreview(
+          mediaUrl: media,
+          mediaType: event.mediaType,
+          aspectRatio: event.mediaAspectRatio ?? 16 / 9,
+          coverImagePath: event.coverImagePath,
+          overlays: event.overlays,
+        ),
+      );
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (mediaSection != null) mediaSection,
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

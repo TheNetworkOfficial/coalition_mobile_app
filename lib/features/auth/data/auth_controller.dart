@@ -2,13 +2,16 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:uuid/uuid.dart';
 
 import '../domain/app_user.dart';
 import '../domain/auth_state.dart';
 import 'local_user_store.dart';
+import '../../profile/data/profile_connections_provider.dart';
 
 class AuthCredentials {
   AuthCredentials({
@@ -73,16 +76,33 @@ class GoogleSignInResult {
 class AuthController extends StateNotifier<AuthState> {
   AuthController(this._store, this._googleSignIn)
       : super(const AuthState(isLoading: true)) {
-    _initialization = _restoreSession();
+    _initialization = _initialize();
   }
 
   final LocalUserStore _store;
   final GoogleSignIn _googleSignIn;
 
   static const _uuid = Uuid();
+  static const List<String> _defaultLikedContentIds = [
+    'organizing-first-shift',
+    'community-roundtable',
+    'bluebird-bus-tour',
+  ];
+  static const List<String> _defaultMyContentIds = [
+    'door-to-door-day',
+  ];
 
   late final Future<void> _initialization;
   List<StoredUserRecord> _users = <StoredUserRecord>[];
+
+  Future<void> _initialize() async {
+    try {
+      await _googleSignIn.initialize();
+    } catch (error) {
+      debugPrint('GoogleSignIn initialization failed: $error');
+    }
+    await _restoreSession();
+  }
 
   Future<void> _restoreSession() async {
     try {
@@ -92,7 +112,35 @@ class AuthController extends StateNotifier<AuthState> {
         final existing =
             _users.firstWhereOrNull((record) => record.user.id == activeId);
         if (existing != null) {
-          state = AuthState(user: existing.user);
+          var activeUser = existing.user;
+          var needsPersist = false;
+          if (activeUser.followerIds.isEmpty &&
+              defaultFollowerConnectionIds.isNotEmpty) {
+            activeUser = activeUser.copyWith(
+              followerIds: List<String>.from(defaultFollowerConnectionIds),
+              followersCount: defaultFollowerConnectionIds.length,
+            );
+            needsPersist = true;
+          }
+          if (activeUser.followingIds.isEmpty &&
+              defaultFollowingConnectionIds.isNotEmpty) {
+            activeUser = activeUser.copyWith(
+              followingIds: List<String>.from(defaultFollowingConnectionIds),
+            );
+            needsPersist = true;
+          }
+          if (needsPersist) {
+            final index =
+                _users.indexWhere((record) => record.user.id == activeUser.id);
+            if (index != -1) {
+              _users[index] = StoredUserRecord(
+                user: activeUser,
+                passwordHash: existing.passwordHash,
+              );
+              await _persistUsers();
+            }
+          }
+          state = AuthState(user: activeUser);
           return;
         }
       }
@@ -129,6 +177,12 @@ class AuthController extends StateNotifier<AuthState> {
       zipCode: trimmedZip,
       username: trimmedUsername,
       googleLinked: credentials.isGoogleUser,
+      followersCount: defaultFollowerConnectionIds.length,
+      totalLikes: 1289,
+      likedContentIds: List<String>.from(_defaultLikedContentIds),
+      myContentIds: List<String>.from(_defaultMyContentIds),
+      followerIds: List<String>.from(defaultFollowerConnectionIds),
+      followingIds: List<String>.from(defaultFollowingConnectionIds),
     );
 
     final record = StoredUserRecord(
@@ -137,10 +191,19 @@ class AuthController extends StateNotifier<AuthState> {
     );
 
     _users = [..._users, record];
-    await _persistUsers();
-    await _store.saveActiveUserId(user.id);
+    try {
+      await _persistUsers();
+      await _store.saveActiveUserId(user.id);
 
-    state = AuthState(user: user);
+      final warning = _store.isUsingFallbackStore
+          ? 'Signed in, but local storage is unavailable. This session will reset after a full restart.'
+          : null;
+
+      state = AuthState(user: user, errorMessage: warning);
+    } catch (error, stackTrace) {
+      _users = _users.where((entry) => entry.user.id != user.id).toList();
+      _handlePersistenceFailure(error, stackTrace);
+    }
   }
 
   Future<void> signIn({
@@ -177,23 +240,41 @@ class AuthController extends StateNotifier<AuthState> {
       return;
     }
 
-    await _store.saveActiveUserId(record.user.id);
-    state = AuthState(user: record.user);
+    try {
+      await _store.saveActiveUserId(record.user.id);
+
+      final warning = _store.isUsingFallbackStore
+          ? 'Signed in, but local storage is unavailable. This session will reset after a full restart.'
+          : null;
+
+      state = AuthState(user: record.user, errorMessage: warning);
+    } catch (error, stackTrace) {
+      _handlePersistenceFailure(error, stackTrace);
+    }
   }
 
   Future<GoogleSignInResult> signInWithGoogle() async {
     await _initialization;
     try {
-      final account = await _googleSignIn.signIn();
-      if (account == null) {
-        return const GoogleSignInResult.cancelled();
+      if (!_googleSignIn.supportsAuthenticate()) {
+        const message =
+            'Google Sign-In is not fully supported on this device. Please try another sign-in method.';
+        state = state.copyWith(errorMessage: message);
+        return const GoogleSignInResult.failure(message);
       }
+
+      final account = await _googleSignIn.authenticate();
 
       final email = account.email;
       final existing = _findByEmail(email);
       if (existing != null) {
         await _store.saveActiveUserId(existing.user.id);
-        state = AuthState(user: existing.user);
+
+        final warning = _store.isUsingFallbackStore
+            ? 'Signed in, but local storage is unavailable. This session will reset after a full restart.'
+            : null;
+
+        state = AuthState(user: existing.user, errorMessage: warning);
         return const GoogleSignInResult.signedIn();
       }
 
@@ -206,6 +287,16 @@ class AuthController extends StateNotifier<AuthState> {
         email: email,
         firstName: firstName,
         lastName: lastName,
+      );
+    } on GoogleSignInException catch (error) {
+      if (error.code == GoogleSignInExceptionCode.canceled) {
+        return const GoogleSignInResult.cancelled();
+      }
+      state = state.copyWith(
+        errorMessage: 'Unable to sign in with Google. Please try again.',
+      );
+      return const GoogleSignInResult.failure(
+        'Unable to sign in with Google. Please try again.',
       );
     } catch (error) {
       state = state.copyWith(
@@ -227,6 +318,16 @@ class AuthController extends StateNotifier<AuthState> {
     await _updateActiveUser(user.copyWith(followedCandidateIds: updated));
   }
 
+  Future<void> toggleFollowCreator(String creatorId) async {
+    final user = state.user;
+    if (user == null) return;
+    final updated = {...user.followedCreatorIds};
+    if (!updated.add(creatorId)) {
+      updated.remove(creatorId);
+    }
+    await _updateActiveUser(user.copyWith(followedCreatorIds: updated));
+  }
+
   Future<void> toggleFollowTag(String tag) async {
     final user = state.user;
     if (user == null) return;
@@ -235,6 +336,18 @@ class AuthController extends StateNotifier<AuthState> {
       updated.remove(tag);
     }
     await _updateActiveUser(user.copyWith(followedTags: updated));
+  }
+
+  Future<void> toggleLikeContent(String contentId) async {
+    final user = state.user;
+    if (user == null) return;
+    final updated = List<String>.from(user.likedContentIds);
+    if (updated.contains(contentId)) {
+      updated.remove(contentId);
+    } else {
+      updated.add(contentId);
+    }
+    await _updateActiveUser(user.copyWith(likedContentIds: updated));
   }
 
   Future<void> recordEventRsvp({
@@ -269,6 +382,106 @@ class AuthController extends StateNotifier<AuthState> {
     );
   }
 
+  Future<void> setUserAccountType({
+    required String userId,
+    required UserAccountType accountType,
+  }) async {
+    final index = _users.indexWhere((record) => record.user.id == userId);
+    if (index == -1) {
+      return;
+    }
+
+    final existing = _users[index];
+    final updatedUser = existing.user.copyWith(accountType: accountType);
+    _users[index] = StoredUserRecord(
+      user: updatedUser,
+      passwordHash: existing.passwordHash,
+    );
+
+    if (state.user?.id == userId) {
+      state = state.copyWith(user: updatedUser);
+    }
+
+    await _persistUsers();
+  }
+
+  Future<String?> updateProfileDetails({
+    String? firstName,
+    String? lastName,
+    String? username,
+    String? bio,
+  }) async {
+    final user = state.user;
+    if (user == null) {
+      return 'You need to be signed in to update your profile.';
+    }
+
+    final trimmedFirst = firstName?.trim();
+    final trimmedLast = lastName?.trim();
+    final trimmedUsername = username?.trim();
+    final trimmedBio = bio?.trim();
+
+    final now = DateTime.now();
+    bool usernameChanged = false;
+    if (trimmedUsername != null) {
+      if (trimmedUsername.isEmpty) {
+        return 'Username is required.';
+      }
+      if (!_usernameRegExp.hasMatch(trimmedUsername)) {
+        return 'Usernames may only include letters, numbers, underscores, and periods.';
+      }
+      final normalizedNew = trimmedUsername.toLowerCase();
+      final normalizedCurrent = user.username.toLowerCase();
+      if (normalizedNew != normalizedCurrent) {
+        usernameChanged = true;
+        final lastChange = user.lastUsernameChangeAt;
+        if (lastChange != null) {
+          final nextAllowed = lastChange.add(const Duration(days: 30));
+          if (now.isBefore(nextAllowed)) {
+            final remaining = nextAllowed.difference(now);
+            final remainingDays = remaining.inDays + (remaining.inHours % 24 > 0 ? 1 : 0);
+            final message = remainingDays > 0
+                ? 'You can change your username again in $remainingDays day${remainingDays == 1 ? '' : 's'}.'
+                : 'You can change your username again soon. Please try again later.';
+            return message;
+          }
+        }
+        final usernameTaken = _users.any(
+          (record) => record.user.username.toLowerCase() == normalizedNew,
+        );
+        if (usernameTaken) {
+          return 'That username is already taken.';
+        }
+      }
+    }
+
+    final updatedUser = user.copyWith(
+      firstName: trimmedFirst ?? user.firstName,
+      lastName: trimmedLast ?? user.lastName,
+      username: trimmedUsername ?? user.username,
+      bio: trimmedBio ?? user.bio,
+      lastUsernameChangeAt:
+          usernameChanged ? now : user.lastUsernameChangeAt,
+    );
+
+    await _updateActiveUser(updatedUser);
+    return null;
+  }
+
+  Future<void> updateProfileImage(String? imagePath) async {
+    final user = state.user;
+    if (user == null) return;
+    await _updateActiveUser(user.copyWith(profileImagePath: imagePath));
+  }
+
+  Future<void> registerCreatedContent(String contentId) async {
+    final user = state.user;
+    if (user == null) return;
+    if (user.myContentIds.contains(contentId)) return;
+    final nextIds = [contentId, ...user.myContentIds];
+    await _updateActiveUser(user.copyWith(myContentIds: nextIds));
+  }
+
   Future<void> signOut() async {
     await _store.saveActiveUserId(null);
     try {
@@ -293,6 +506,15 @@ class AuthController extends StateNotifier<AuthState> {
 
   Future<void> _persistUsers() async {
     await _store.saveUsers(_users);
+  }
+
+  void _handlePersistenceFailure(Object error, StackTrace stackTrace) {
+    debugPrint('Auth persistence failure: $error\n$stackTrace');
+    state = state.copyWith(
+      isLoading: false,
+      errorMessage:
+          'We couldn\'t save your account just yet. Please try again in a moment.',
+    );
   }
 
   StoredUserRecord? _findByIdentifier(String input) {
@@ -392,7 +614,7 @@ final localUserStoreProvider = Provider<LocalUserStore>((ref) {
 });
 
 final googleSignInProvider = Provider<GoogleSignIn>((ref) {
-  return GoogleSignIn(scopes: const ['email']);
+  return GoogleSignIn.instance;
 });
 
 final authControllerProvider =

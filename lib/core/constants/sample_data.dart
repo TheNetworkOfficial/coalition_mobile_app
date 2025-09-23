@@ -76,12 +76,12 @@ final sampleEvents = <CoalitionEvent>[
     hostCandidateIds: ['lux-sam', 'jamison-halloway'],
     tags: ['Volunteering', 'Community'],
     timeSlots: [
-      EventTimeSlot(
+      const EventTimeSlot(
         id: 'field-launch-saturday',
         label: 'Saturday · 10:00 AM - 1:00 PM',
         capacity: 30,
       ),
-      EventTimeSlot(
+      const EventTimeSlot(
         id: 'field-launch-sunday',
         label: 'Sunday · 12:00 PM - 4:00 PM',
         capacity: 24,
@@ -100,7 +100,7 @@ final sampleEvents = <CoalitionEvent>[
     hostCandidateIds: ['lux-sam', 'adriana-two-hearts'],
     tags: ['Public lands', 'Economic development'],
     timeSlots: [
-      EventTimeSlot(
+      const EventTimeSlot(
         id: 'lands-roundtable-session',
         label: 'Wednesday · 6:00 PM - 7:30 PM',
         capacity: 120,
@@ -119,7 +119,7 @@ final sampleEvents = <CoalitionEvent>[
     hostCandidateIds: ['maria-chen'],
     tags: ['Education', 'Families'],
     timeSlots: [
-      EventTimeSlot(
+      const EventTimeSlot(
         id: 'education-townhall-session',
         label: 'Thursday · 5:30 PM - 7:00 PM',
       ),

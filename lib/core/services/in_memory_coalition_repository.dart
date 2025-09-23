@@ -13,7 +13,7 @@ class InMemoryCoalitionRepository implements CoalitionRepository {
       : _candidates = List<Candidate>.from(sampleCandidates),
         _events = List<CoalitionEvent>.from(sampleEvents);
 
-  static final _uuid = const Uuid();
+  static const Uuid _uuid = Uuid();
 
   final _candidateController =
       StreamController<List<Candidate>>.broadcast(sync: true);

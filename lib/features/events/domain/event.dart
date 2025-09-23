@@ -1,6 +1,10 @@
 import 'dart:math' as math;
 
+import '../../feed/domain/feed_content.dart';
+
 enum EventRsvpStatus { confirmed, cancelled }
+
+enum EventMediaType { image, video }
 
 class EventAttendee {
   const EventAttendee({
@@ -89,6 +93,11 @@ class CoalitionEvent {
     this.hostCandidateIds = const <String>[],
     this.tags = const <String>[],
     this.timeSlots = const <EventTimeSlot>[],
+    this.mediaUrl,
+    this.mediaType,
+    this.coverImagePath,
+    this.mediaAspectRatio,
+    this.overlays = const <FeedTextOverlay>[],
   });
 
   final String id;
@@ -101,6 +110,11 @@ class CoalitionEvent {
   final List<String> hostCandidateIds;
   final List<String> tags;
   final List<EventTimeSlot> timeSlots;
+  final String? mediaUrl;
+  final EventMediaType? mediaType;
+  final String? coverImagePath;
+  final double? mediaAspectRatio;
+  final List<FeedTextOverlay> overlays;
 
   CoalitionEvent copyWith({
     String? title,
@@ -112,6 +126,11 @@ class CoalitionEvent {
     List<String>? hostCandidateIds,
     List<String>? tags,
     List<EventTimeSlot>? timeSlots,
+    String? mediaUrl,
+    Object? coverImagePath = _sentinel,
+    EventMediaType? mediaType,
+    double? mediaAspectRatio,
+    List<FeedTextOverlay>? overlays,
   }) {
     return CoalitionEvent(
       id: id,
@@ -124,11 +143,20 @@ class CoalitionEvent {
       hostCandidateIds: hostCandidateIds ?? this.hostCandidateIds,
       tags: tags ?? this.tags,
       timeSlots: timeSlots ?? this.timeSlots,
+      mediaUrl: mediaUrl ?? this.mediaUrl,
+      coverImagePath: coverImagePath == _sentinel
+          ? this.coverImagePath
+          : coverImagePath as String?,
+      mediaType: mediaType ?? this.mediaType,
+      mediaAspectRatio: mediaAspectRatio ?? this.mediaAspectRatio,
+      overlays: overlays ?? this.overlays,
     );
   }
 
   bool get hasLimitedCapacity =>
       timeSlots.any((slot) => slot.capacity != null && slot.capacity! > 0);
+
+  static const _sentinel = Object();
 }
 
 class EventRsvpSubmission {

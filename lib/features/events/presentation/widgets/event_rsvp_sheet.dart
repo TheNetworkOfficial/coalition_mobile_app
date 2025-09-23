@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../core/services/coalition_repository.dart';
+import '../../../../core/services/in_memory_coalition_repository.dart';
 import '../../../auth/data/auth_controller.dart';
 import '../../../auth/domain/app_user.dart';
 import '../../domain/event.dart';

@@ -8,6 +8,8 @@ import '../../candidates/data/candidate_providers.dart';
 import '../../candidates/domain/candidate.dart';
 import '../../events/data/event_providers.dart';
 import '../../events/domain/event.dart';
+import '../../profile/data/candidate_account_request_controller.dart';
+import '../../profile/domain/candidate_account_request.dart';
 
 class AdminDashboardScreen extends ConsumerWidget {
   const AdminDashboardScreen({super.key});
@@ -25,6 +27,14 @@ class AdminDashboardScreen extends ConsumerWidget {
           data: (value) => value,
           orElse: () => const <CoalitionEvent>[],
         );
+    final requestsAsync = ref.watch(candidateAccountRequestControllerProvider);
+    final candidateRequests = requestsAsync.maybeWhen(
+      data: (value) => value,
+      orElse: () => const <CandidateAccountRequest>[],
+    );
+    final pendingRequestCount = candidateRequests
+        .where((request) => request.status == CandidateAccountRequestStatus.pending)
+        .length;
 
     if (user == null || !user.isAdmin) {
       return const Scaffold(
@@ -49,7 +59,16 @@ class AdminDashboardScreen extends ConsumerWidget {
         child: ListView(
           padding: const EdgeInsets.all(24),
           children: [
-            _AdminStatsCard(candidateCount: candidates.length, eventCount: events.length),
+            _AdminStatsCard(
+              candidateCount: candidates.length,
+              eventCount: events.length,
+              pendingRequestCount: pendingRequestCount,
+            ),
+            const SizedBox(height: 20),
+            _CandidateAccountRequestsCard(
+              requests: candidateRequests,
+              isLoading: requestsAsync.isLoading,
+            ),
             const SizedBox(height: 20),
             _CandidateFormCard(),
             const SizedBox(height: 20),
@@ -64,10 +83,15 @@ class AdminDashboardScreen extends ConsumerWidget {
 }
 
 class _AdminStatsCard extends StatelessWidget {
-  const _AdminStatsCard({required this.candidateCount, required this.eventCount});
+  const _AdminStatsCard({
+    required this.candidateCount,
+    required this.eventCount,
+    required this.pendingRequestCount,
+  });
 
   final int candidateCount;
   final int eventCount;
+  final int pendingRequestCount;
 
   @override
   Widget build(BuildContext context) {
@@ -79,6 +103,11 @@ class _AdminStatsCard extends StatelessWidget {
             _StatTile(label: 'Candidates', value: candidateCount.toString()),
             const SizedBox(width: 20),
             _StatTile(label: 'Upcoming events', value: eventCount.toString()),
+            const SizedBox(width: 20),
+            _StatTile(
+              label: 'Pending requests',
+              value: pendingRequestCount.toString(),
+            ),
           ],
         ),
       ),
@@ -108,6 +137,245 @@ class _StatTile extends StatelessWidget {
     );
   }
 }
+
+class _CandidateAccountRequestsCard extends ConsumerWidget {
+  const _CandidateAccountRequestsCard({
+    required this.requests,
+    required this.isLoading,
+  });
+
+  final List<CandidateAccountRequest> requests;
+  final bool isLoading;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final pending = requests
+        .where((request) => request.status == CandidateAccountRequestStatus.pending)
+        .toList()
+      ..sort((a, b) => a.submittedAt.compareTo(b.submittedAt));
+    final reviewed = requests
+        .where((request) => request.status != CandidateAccountRequestStatus.pending)
+        .toList()
+      ..sort((a, b) => b.submittedAt.compareTo(a.submittedAt));
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Candidate account requests',
+                    style: theme.textTheme.titleMedium,
+                  ),
+                ),
+                if (isLoading)
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (pending.isEmpty && reviewed.isEmpty)
+              Text(
+                'No candidate upgrade requests yet.',
+                style: theme.textTheme.bodyMedium,
+              )
+            else ...[
+              if (pending.isNotEmpty) ...[
+                Text(
+                  'Pending',
+                  style: theme.textTheme.labelLarge,
+                ),
+                const SizedBox(height: 8),
+                for (var i = 0; i < pending.length; i++) ...[
+                  _PendingRequestTile(request: pending[i]),
+                  if (i != pending.length - 1) const Divider(height: 24),
+                ],
+              ]
+              else ...[
+                Text(
+                  'No pending requests right now.',
+                  style: theme.textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 12),
+              ],
+              if (reviewed.isNotEmpty) ...[
+                Text(
+                  'Recently reviewed',
+                  style: theme.textTheme.labelLarge,
+                ),
+                const SizedBox(height: 8),
+                for (final request in reviewed.take(5))
+                  _ReviewedRequestTile(request: request),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PendingRequestTile extends ConsumerWidget {
+  const _PendingRequestTile({required this.request});
+
+  final CandidateAccountRequest request;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          request.fullName,
+          style: Theme.of(context).textTheme.titleSmall,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '${request.email} • ${request.phone}',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          request.campaignAddress,
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'FEC: ${request.fecNumber}',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            OutlinedButton(
+              onPressed: () => _reviewRequest(
+                context,
+                ref,
+                request,
+                CandidateAccountRequestStatus.denied,
+              ),
+              child: const Text('Deny'),
+            ),
+            const SizedBox(width: 12),
+            FilledButton(
+              onPressed: () => _reviewRequest(
+                context,
+                ref,
+                request,
+                CandidateAccountRequestStatus.approved,
+              ),
+              child: const Text('Approve'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Future<void> _reviewRequest(
+    BuildContext context,
+    WidgetRef ref,
+    CandidateAccountRequest request,
+    CandidateAccountRequestStatus status,
+  ) async {
+    try {
+      final reviewerId = ref.read(authControllerProvider).user?.id;
+      await ref
+          .read(candidateAccountRequestControllerProvider.notifier)
+          .reviewRequest(
+            requestId: request.id,
+            status: status,
+            reviewerId: reviewerId,
+          );
+      if (!context.mounted) {
+        return;
+      }
+      final message = status == CandidateAccountRequestStatus.approved
+          ? 'Approved ${request.fullName}.'
+          : 'Marked ${request.fullName} as not approved.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } catch (_) {
+      if (!context.mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('We could not update that request. Please try again.'),
+        ),
+      );
+    }
+  }
+}
+
+class _ReviewedRequestTile extends StatelessWidget {
+  const _ReviewedRequestTile({required this.request});
+
+  final CandidateAccountRequest request;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final status = request.status;
+    final reviewedOn = request.reviewedAt ?? request.submittedAt;
+    final color = status == CandidateAccountRequestStatus.approved
+        ? Colors.green
+        : Colors.redAccent;
+    final label = status == CandidateAccountRequestStatus.approved ? 'Approved' : 'Denied';
+
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      title: Text(request.fullName),
+      subtitle: Text('Reviewed ${_formatFullDate(reviewedOn)}'),
+      trailing: Chip(
+        label: Text(label),
+        backgroundColor: color.withValues(alpha: 0.15),
+        labelStyle: theme.textTheme.labelSmall?.copyWith(color: color),
+        side: BorderSide(color: color.withValues(alpha: 0.4)),
+      ),
+    );
+  }
+}
+
+String _formatFullDate(DateTime date) {
+  final weekday = _weekdayNames[date.weekday - 1];
+  final month = _monthNames[date.month - 1];
+  return '$weekday, $month ${date.day}';
+}
+
+const _weekdayNames = [
+  'Mon',
+  'Tue',
+  'Wed',
+  'Thu',
+  'Fri',
+  'Sat',
+  'Sun',
+];
+
+const _monthNames = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
 
 class _CandidateFormCard extends ConsumerStatefulWidget {
   @override

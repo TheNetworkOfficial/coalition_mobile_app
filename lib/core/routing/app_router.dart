@@ -9,6 +9,9 @@ import '../../features/auth/data/auth_controller.dart';
 import '../../features/auth/presentation/auth_gate.dart';
 import '../../features/candidates/presentation/candidate_detail_screen.dart';
 import '../../features/candidates/presentation/candidate_list_screen.dart';
+import '../../features/create/presentation/create_event_screen.dart';
+import '../../features/create/presentation/create_post_screen.dart';
+import '../../features/feed/presentation/feed_screen.dart';
 import '../../features/events/presentation/event_detail_screen.dart';
 import '../../features/events/presentation/events_feed_screen.dart';
 import '../../features/home/presentation/home_shell.dart';
@@ -42,7 +45,7 @@ final goRouterProvider = Provider<GoRouter>((ref) {
       }
 
       if (isAuthenticated && loggingIn) {
-        return '/candidates';
+        return '/feed';
       }
 
       if (viewingAdmin && !isAdmin) {
@@ -63,6 +66,13 @@ final goRouterProvider = Provider<GoRouter>((ref) {
           child: child,
         ),
         routes: [
+          GoRoute(
+            path: '/feed',
+            name: FeedScreen.routeName,
+            pageBuilder: (context, state) => const NoTransitionPage(
+              child: FeedScreen(),
+            ),
+          ),
           GoRoute(
             path: '/candidates',
             name: CandidateListScreen.routeName,
@@ -103,6 +113,18 @@ final goRouterProvider = Provider<GoRouter>((ref) {
           final eventId = state.pathParameters['id']!;
           return EventDetailScreen(eventId: eventId);
         },
+      ),
+      GoRoute(
+        parentNavigatorKey: _rootNavigatorKey,
+        path: '/create/post',
+        name: CreatePostScreen.routeName,
+        builder: (context, state) => const CreatePostScreen(),
+      ),
+      GoRoute(
+        parentNavigatorKey: _rootNavigatorKey,
+        path: '/create/event',
+        name: CreateEventScreen.routeName,
+        builder: (context, state) => const CreateEventScreen(),
       ),
       GoRoute(
         parentNavigatorKey: _rootNavigatorKey,

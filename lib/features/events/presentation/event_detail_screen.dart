@@ -10,6 +10,7 @@ import '../../candidates/data/candidate_providers.dart';
 import '../../candidates/domain/candidate.dart';
 import '../data/event_providers.dart';
 import '../domain/event.dart';
+import 'widgets/event_media_preview.dart';
 import 'widgets/event_rsvp_sheet.dart';
 
 class EventDetailScreen extends ConsumerStatefulWidget {
@@ -253,7 +254,12 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
   Future<void> _shareEvent(String platform, CoalitionEvent event) async {
     final localStart = event.startDate.toLocal();
     final shareText = _buildShareMessage(event, platform, localStart);
-    await Share.share(shareText, subject: event.title);
+    await SharePlus.instance.share(
+      ShareParams(
+        text: shareText,
+        subject: event.title.isNotEmpty ? event.title : null,
+      ),
+    );
   }
 
   String _buildShareMessage(
@@ -325,9 +331,21 @@ class _EventHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final media = event.mediaUrl;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (media != null && media.isNotEmpty) ...[
+          EventMediaPreview(
+            mediaUrl: media,
+            mediaType: event.mediaType,
+            aspectRatio: event.mediaAspectRatio ?? 16 / 9,
+            coverImagePath: event.coverImagePath,
+            overlays: event.overlays,
+            autoplay: true,
+          ),
+          const SizedBox(height: 20),
+        ],
         Text(
           event.title,
           style: theme.textTheme.headlineSmall?.copyWith(
