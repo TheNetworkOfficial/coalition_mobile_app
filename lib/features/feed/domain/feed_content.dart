@@ -1,5 +1,4 @@
-import 'dart:ui';
-
+import 'package:flutter/material.dart';
 import 'package:equatable/equatable.dart';
 
 enum FeedMediaType { image, video }
@@ -219,8 +218,8 @@ class FeedTextOverlay extends Equatable {
   List<Object?> get props => [
         id,
         text,
-        color.value,
-        backgroundColor?.value,
+        color.toARGB32(),
+        backgroundColor?.toARGB32(),
         fontFamily,
         fontWeight,
         fontStyle,

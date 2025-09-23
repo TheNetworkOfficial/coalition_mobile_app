@@ -76,8 +76,8 @@ class _FeedCardState extends State<FeedCard> {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Colors.black.withOpacity(0.05),
-                    Colors.black.withOpacity(0.3),
+                    Colors.black.withValues(alpha: 0.05),
+                    Colors.black.withValues(alpha: 0.3),
                   ],
                 ),
               ),
@@ -105,9 +105,9 @@ class _FeedCardState extends State<FeedCard> {
                   begin: Alignment.bottomCenter,
                   end: Alignment.topCenter,
                   colors: [
-                    Colors.black.withOpacity(0.88),
-                    Colors.black.withOpacity(0.32),
-                    Colors.black.withOpacity(0.02),
+                    Colors.black.withValues(alpha: 0.88),
+                    Colors.black.withValues(alpha: 0.32),
+                    Colors.black.withValues(alpha: 0.02),
                   ],
                 ),
               ),
@@ -124,13 +124,15 @@ class _FeedCardState extends State<FeedCard> {
                       children: [
                         CircleAvatar(
                           radius: 20,
-                          backgroundImage:
-                              _posterImageProvider(widget.content.posterAvatarUrl),
-                          backgroundColor: Colors.white.withOpacity(0.15),
-                          child: _posterImageProvider(widget.content.posterAvatarUrl) ==
+                          backgroundImage: _posterImageProvider(
+                              widget.content.posterAvatarUrl),
+                          backgroundColor: Colors.white.withValues(alpha: 0.15),
+                          child: _posterImageProvider(
+                                      widget.content.posterAvatarUrl) ==
                                   null
                               ? const Icon(Icons.person, color: Colors.white)
                               : null,
+                        ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
@@ -323,7 +325,7 @@ class _ActionButton extends StatelessWidget {
       children: [
         DecoratedBox(
           decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.32),
+            color: Colors.black.withValues(alpha: 0.32),
             borderRadius: BorderRadius.circular(24),
           ),
           child: IconButton(
@@ -367,12 +369,12 @@ class _ProfileActionButton extends StatelessWidget {
         children: [
           CircleAvatar(
             radius: 26,
-            backgroundColor: Colors.black.withOpacity(0.25),
+            backgroundColor: Colors.black.withValues(alpha: 0.25),
             child: CircleAvatar(
               radius: 24,
               backgroundImage: _imageProvider(avatarUrl),
               backgroundColor: avatarUrl == null
-                  ? Colors.white.withOpacity(0.15)
+                  ? Colors.white.withValues(alpha: 0.15)
                   : Colors.white,
               child: avatarUrl == null
                   ? Text(
@@ -484,7 +486,8 @@ class _FeedMediaState extends State<_FeedMedia> {
       return FutureBuilder<void>(
         future: _initializeVideoFuture,
         builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done || controller == null) {
+          if (snapshot.connectionState != ConnectionState.done ||
+              controller == null) {
             return _buildPlaceholder();
           }
           if (widget.isActive && !controller.value.isPlaying) {
@@ -492,9 +495,6 @@ class _FeedMediaState extends State<_FeedMedia> {
           } else if (!widget.isActive && controller.value.isPlaying) {
             controller.pause();
           }
-          final aspectRatio = controller.value.aspectRatio == 0
-              ? content.aspectRatio
-              : controller.value.aspectRatio;
           return FittedBox(
             fit: BoxFit.cover,
             child: SizedBox(
@@ -580,15 +580,18 @@ class _FeedOverlayLayer extends StatelessWidget {
           children: [
             for (final overlay in overlays)
               Positioned(
-                left: overlay.position.dx.clamp(0.0, 1.0) * constraints.maxWidth,
-                top: overlay.position.dy.clamp(0.0, 1.0) * constraints.maxHeight,
+                left:
+                    overlay.position.dx.clamp(0.0, 1.0) * constraints.maxWidth,
+                top:
+                    overlay.position.dy.clamp(0.0, 1.0) * constraints.maxHeight,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     color: overlay.backgroundColor,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     child: Text(
                       overlay.text,
                       style: TextStyle(

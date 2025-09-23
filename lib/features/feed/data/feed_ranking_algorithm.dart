@@ -87,9 +87,6 @@ class FeedRankingService {
     final candidateLookup = {
       for (final candidate in inputs.candidates) candidate.id: candidate,
     };
-    final eventLookup = {
-      for (final event in inputs.events) event.id: event,
-    };
     final contentLookup = {
       for (final item in inputs.availableContent) item.id: item,
     };
@@ -133,9 +130,10 @@ class FeedRankingService {
         score += config.promotedWeight;
       }
 
-      final isFollowerOfCandidate = followedCandidates.contains(content.posterId) ||
-          content.associatedCandidateIds
-              .any((id) => followedCandidates.contains(id));
+      final isFollowerOfCandidate =
+          followedCandidates.contains(content.posterId) ||
+              content.associatedCandidateIds
+                  .any((id) => followedCandidates.contains(id));
       final isFollowerOfCreator = followedCreators.contains(content.posterId) ||
           content.relatedCreatorIds.any((id) => followedCreators.contains(id));
 
@@ -161,8 +159,7 @@ class FeedRankingService {
         }
       }
 
-      if (content.associatedEventIds
-          .any((id) => rsvpEvents.contains(id))) {
+      if (content.associatedEventIds.any((id) => rsvpEvents.contains(id))) {
         reasons['rsvp'] = config.rsvpWeight;
         score += config.rsvpWeight;
       }
@@ -177,8 +174,7 @@ class FeedRankingService {
         if (content.zipCode == user.zipCode) {
           reasons['nearby'] = config.locationExactWeight;
           score += config.locationExactWeight;
-        } else if (prefix.isNotEmpty &&
-            content.zipCode!.startsWith(prefix)) {
+        } else if (prefix.isNotEmpty && content.zipCode!.startsWith(prefix)) {
           reasons['regional'] = config.locationPrefixWeight;
           score += config.locationPrefixWeight;
         } else if (content.distanceHint != null) {
@@ -196,7 +192,8 @@ class FeedRankingService {
         score -= penalty;
       }
 
-      ranked.add(RankedFeedContent(content: content, score: score, reasons: reasons));
+      ranked.add(
+          RankedFeedContent(content: content, score: score, reasons: reasons));
     }
 
     ranked.sort((a, b) {
@@ -210,7 +207,8 @@ class FeedRankingService {
     // Guarantee a healthy mix: promote at least one trending item per 5 if absent.
     final results = <RankedFeedContent>[];
     var trendingCarry = ranked
-        .where((entry) => (entry.reasons['trending'] ?? 0) > config.trendingWeight)
+        .where(
+            (entry) => (entry.reasons['trending'] ?? 0) > config.trendingWeight)
         .toList();
     final trendingIterator = trendingCarry.iterator;
 
@@ -253,7 +251,8 @@ final feedRankingServiceProvider = Provider((ref) {
   return const FeedRankingService();
 });
 
-final personalizedFeedProvider = FutureProvider<List<RankedFeedContent>>((ref) async {
+final personalizedFeedProvider =
+    FutureProvider<List<RankedFeedContent>>((ref) async {
   final authState = ref.watch(authControllerProvider);
   final user = authState.user;
   if (user == null) {

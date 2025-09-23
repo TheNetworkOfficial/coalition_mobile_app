@@ -56,10 +56,8 @@ class _CandidateAccountRequestSheetState
       data: (value) => value,
       orElse: () => const <CandidateAccountRequest>[],
     );
-    final latest =
-        user == null ? null : _latestForUser(requests, user.id);
-    final hasPending =
-        user == null ? false : _hasPending(requests, user.id);
+    final latest = user == null ? null : _latestForUser(requests, user.id);
+    final hasPending = user == null ? false : _hasPending(requests, user.id);
     final isCandidate = user?.accountType == UserAccountType.candidate;
     final bool canSubmit =
         !hasPending && user != null && !isCandidate && !_submitting;
@@ -84,9 +82,7 @@ class _CandidateAccountRequestSheetState
                       const SizedBox(height: 8),
                       Text(
                         'Share your campaign details and our team will verify and migrate your account.',
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodyMedium,
+                        style: Theme.of(context).textTheme.bodyMedium,
                       ),
                     ],
                   ),
@@ -102,9 +98,9 @@ class _CandidateAccountRequestSheetState
             if (requestState.isLoading)
               const LinearProgressIndicator(minHeight: 2),
             if (isCandidate)
-              Padding(
-                padding: const EdgeInsets.only(top: 16),
-                child: const _InfoBanner(
+              const Padding(
+                padding: EdgeInsets.only(top: 16),
+                child: _InfoBanner(
                   icon: Icons.check_circle_outlined,
                   iconColor: Colors.green,
                   message:
@@ -132,8 +128,7 @@ class _CandidateAccountRequestSheetState
                       latest.status == CandidateAccountRequestStatus.denied
                           ? Colors.redAccent
                           : Colors.green,
-                  message: latest.status ==
-                          CandidateAccountRequestStatus.denied
+                  message: latest.status == CandidateAccountRequestStatus.denied
                       ? 'Your previous request was not approved. Update your campaign information and submit again when ready.'
                       : 'Your account was upgraded on ${_formatDate(latest.reviewedAt ?? latest.submittedAt)}.',
                 ),
@@ -205,9 +200,8 @@ class _CandidateAccountRequestSheetState
                       child: FilledButton.icon(
                         onPressed: canSubmit ? () => _submit(user) : null,
                         icon: const Icon(Icons.send),
-                        label: Text(_submitting
-                            ? 'Submitting...'
-                            : 'Submit request'),
+                        label: Text(
+                            _submitting ? 'Submitting...' : 'Submit request'),
                       ),
                     ),
                   ],
@@ -281,8 +275,7 @@ class _CandidateAccountRequestSheetState
     CandidateAccountRequest? latest;
     for (final request in requests) {
       if (request.userId != userId) continue;
-      if (latest == null ||
-          request.submittedAt.isAfter(latest.submittedAt)) {
+      if (latest == null || request.submittedAt.isAfter(latest.submittedAt)) {
         latest = request;
       }
     }

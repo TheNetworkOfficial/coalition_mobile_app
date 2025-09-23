@@ -10,7 +10,7 @@ import '../../auth/domain/app_user.dart';
 import '../../events/domain/event.dart';
 import '../../feed/data/feed_content_store.dart';
 import '../../feed/domain/feed_content.dart';
-import '../../core/services/in_memory_coalition_repository.dart';
+import '../../../core/services/in_memory_coalition_repository.dart';
 import '../domain/create_event_request.dart';
 import '../domain/create_post_request.dart';
 
@@ -55,7 +55,9 @@ class CreateContentService {
     );
 
     _ref.read(feedContentStoreProvider.notifier).addContent(content);
-    await _ref.read(authControllerProvider.notifier).registerCreatedContent(contentId);
+    await _ref
+        .read(authControllerProvider.notifier)
+        .registerCreatedContent(contentId);
 
     return contentId;
   }
@@ -82,9 +84,8 @@ class CreateContentService {
       tags: request.tags,
       timeSlots: request.timeSlots,
       mediaUrl: request.mediaPath,
-      mediaType: request.mediaType == null
-          ? null
-          : _mapMediaType(request.mediaType!),
+      mediaType:
+          request.mediaType == null ? null : _mapMediaType(request.mediaType!),
       coverImagePath: coverImage,
       mediaAspectRatio: request.mediaAspectRatio,
       overlays: request.overlays,

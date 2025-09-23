@@ -1,6 +1,4 @@
 import 'dart:io';
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -155,7 +153,8 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
             SliverToBoxAdapter(child: _buildMediaSection(context)),
             SliverToBoxAdapter(child: _buildOverlaySection(context)),
             SliverToBoxAdapter(child: _buildDetailsSection(context)),
-            SliverToBoxAdapter(child: _buildHostsSection(context, candidateList)),
+            SliverToBoxAdapter(
+                child: _buildHostsSection(context, candidateList)),
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
@@ -219,7 +218,8 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
         child: DecoratedBox(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+            border:
+                Border.all(color: Theme.of(context).colorScheme.outlineVariant),
           ),
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -275,7 +275,8 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           AspectRatio(
-            aspectRatio: aspectRatio <= 0 ? _defaultMediaAspectRatio : aspectRatio,
+            aspectRatio:
+                aspectRatio <= 0 ? _defaultMediaAspectRatio : aspectRatio,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(24),
               child: LayoutBuilder(
@@ -289,7 +290,8 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                           child: OverlayLayer(
                             overlays: _overlays,
                             onOverlayDragged: (id, delta) {
-                              _updateOverlayPosition(id, delta, constraints.biggest);
+                              _updateOverlayPosition(
+                                  id, delta, constraints.biggest);
                             },
                             onOverlayTapped: (overlay) {
                               _openOverlayEditor(existing: overlay);
@@ -301,7 +303,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                         top: 12,
                         child: DecoratedBox(
                           decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.45),
+                            color: Colors.black.withValues(alpha: 0.45),
                             borderRadius: BorderRadius.circular(18),
                           ),
                           child: IconButton(
@@ -498,11 +500,12 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
           TextField(
             controller: _locationController,
             textCapitalization: TextCapitalization.words,
-            decoration: const InputDecoration(labelText: 'Location or meeting link'),
+            decoration:
+                const InputDecoration(labelText: 'Location or meeting link'),
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
-            value: _eventType,
+            initialValue: _eventType,
             decoration: const InputDecoration(labelText: 'Event type'),
             items: [
               for (final entry in _eventTypes.entries)
@@ -657,8 +660,9 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
       final fileBytes = await file.readAsBytes();
       final decoded = await decodeImageFromList(fileBytes);
       setState(() {
-        _mediaAspectRatio =
-            decoded.width == 0 ? _defaultMediaAspectRatio : decoded.width / decoded.height;
+        _mediaAspectRatio = decoded.width == 0
+            ? _defaultMediaAspectRatio
+            : decoded.width / decoded.height;
       });
     } else {
       final controller = VideoPlayerController.file(File(file.path));
@@ -786,7 +790,8 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
     if (result == null) return;
 
     if (result.delete && existing != null) {
-      setState(() => _overlays.removeWhere((element) => element.id == existing.id));
+      setState(
+          () => _overlays.removeWhere((element) => element.id == existing.id));
       return;
     }
 
@@ -810,6 +815,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
     final controller = _videoController!;
     await controller.pause();
 
+    if (!mounted) return;
     final result = await showModalBottomSheet<CoverEditorResult>(
       context: context,
       isScrollControlled: true,
@@ -855,12 +861,11 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
         _isGeneratingCover = true;
       });
       try {
-        final generated = await ref
-            .read(createContentServiceProvider)
-            .generateCoverFromVideo(
-              videoPath: _mediaFile!.path,
-              position: result.framePosition!,
-            );
+        final generated =
+            await ref.read(createContentServiceProvider).generateCoverFromVideo(
+                  videoPath: _mediaFile!.path,
+                  position: result.framePosition!,
+                );
         if (!mounted) return;
         setState(() {
           _generatedCoverPath = generated;
@@ -906,9 +911,8 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
   Future<void> _pickTime() async {
     final picked = await showTimePicker(
       context: context,
-      initialTime: _eventDate != null
-          ? TimeOfDay.fromDateTime(_eventDate!)
-          : _eventTime,
+      initialTime:
+          _eventDate != null ? TimeOfDay.fromDateTime(_eventDate!) : _eventTime,
     );
     if (picked == null) return;
     setState(() {
@@ -1052,7 +1056,8 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
       if (!mounted) return;
       Navigator.of(context).pop(eventId);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Event published to the coalition calendar.')),
+        const SnackBar(
+            content: Text('Event published to the coalition calendar.')),
       );
     } catch (error, stackTrace) {
       debugPrint('Failed to create event: $error\n$stackTrace');

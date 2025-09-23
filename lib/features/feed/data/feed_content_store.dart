@@ -1,4 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
+// state_notifier types are provided transitively through flutter_riverpod/legacy
 
 import '../domain/feed_content.dart';
 import 'feed_sample_content.dart';

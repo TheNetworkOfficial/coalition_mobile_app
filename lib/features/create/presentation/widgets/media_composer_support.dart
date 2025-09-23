@@ -128,7 +128,7 @@ class OverlayEditorSheet extends StatefulWidget {
   const OverlayEditorSheet({
     required this.initial,
     required this.allowDelete,
-    this.overlayColors = overlayColors,
+    this.overlayColors = _overlayColors,
     this.fontOptions = overlayFontOptions,
     super.key,
   });
@@ -180,8 +180,8 @@ class _OverlayEditorSheetState extends State<OverlayEditorSheet> {
             decoration: const InputDecoration(
               labelText: 'Overlay text',
             ),
-            onChanged: (value) => setState(() =>
-                _overlay = _overlay.copyWith(text: value.trim().isEmpty ? ' ' : value)),
+            onChanged: (value) => setState(() => _overlay =
+                _overlay.copyWith(text: value.trim().isEmpty ? ' ' : value)),
           ),
           const SizedBox(height: 18),
           Text('Font style', style: Theme.of(context).textTheme.titleSmall),
@@ -196,13 +196,13 @@ class _OverlayEditorSheetState extends State<OverlayEditorSheet> {
                   selected: _overlay.fontFamily == option.fontFamily &&
                       _overlay.fontWeight == option.fontWeight &&
                       _overlay.fontStyle == option.fontStyle,
-                  onSelected: (_) => setState(() =>
-                      _overlay = _overlay.copyWith(
-                        fontFamily: option.fontFamily,
-                        fontWeight: option.fontWeight,
-                        fontStyle: option.fontStyle,
-                        fontLabel: option.label,
-                      )),
+                  onSelected: (_) =>
+                      setState(() => _overlay = _overlay.copyWith(
+                            fontFamily: option.fontFamily,
+                            fontWeight: option.fontWeight,
+                            fontStyle: option.fontStyle,
+                            fontLabel: option.label,
+                          )),
                 ),
             ],
           ),
@@ -215,7 +215,8 @@ class _OverlayEditorSheetState extends State<OverlayEditorSheet> {
             children: [
               for (final color in widget.overlayColors)
                 GestureDetector(
-                  onTap: () => setState(() => _overlay = _overlay.copyWith(color: color)),
+                  onTap: () => setState(
+                      () => _overlay = _overlay.copyWith(color: color)),
                   child: CircleAvatar(
                     radius: 18,
                     backgroundColor: color,
@@ -235,25 +236,25 @@ class _OverlayEditorSheetState extends State<OverlayEditorSheet> {
               FilterChip(
                 selected: _overlay.backgroundColor != null,
                 label: const Text('Add background pill'),
-                onSelected: (selected) => setState(() =>
-                    _overlay = _overlay.copyWith(
-                      backgroundColor: selected
-                          ? _overlay.color.withOpacity(0.15)
-                          : null,
-                      changeBackground: true,
-                    )),
+                onSelected: (selected) =>
+                    setState(() => _overlay = _overlay.copyWith(
+                          backgroundColor: selected
+                              ? _overlay.color.withValues(alpha: 0.15)
+                              : null,
+                          changeBackground: true,
+                        )),
               ),
             ],
           ),
           const SizedBox(height: 16),
           Text('Size', style: Theme.of(context).textTheme.titleSmall),
           Slider(
-            min: 16,
-            max: 48,
-            value: _overlay.fontSize,
+            min: 16.0,
+            max: 48.0,
+            value: _overlay.fontSize.toDouble(),
             label: _overlay.fontSize.toStringAsFixed(0),
-            onChanged: (value) => setState(() =>
-                _overlay = _overlay.copyWith(fontSize: value)),
+            onChanged: (value) =>
+                setState(() => _overlay = _overlay.copyWith(fontSize: value)),
           ),
           const SizedBox(height: 20),
           Row(
@@ -300,8 +301,10 @@ class OverlayFontOption {
 }
 
 const overlayFontOptions = <OverlayFontOption>[
-  OverlayFontOption(label: 'Classic', fontFamily: null, fontWeight: FontWeight.w600),
-  OverlayFontOption(label: 'Bold', fontFamily: null, fontWeight: FontWeight.w800),
+  OverlayFontOption(
+      label: 'Classic', fontFamily: null, fontWeight: FontWeight.w600),
+  OverlayFontOption(
+      label: 'Bold', fontFamily: null, fontWeight: FontWeight.w800),
   OverlayFontOption(
     label: 'Serif',
     fontFamily: 'Georgia',
@@ -320,7 +323,7 @@ const overlayFontOptions = <OverlayFontOption>[
   ),
 ];
 
-const overlayColors = <Color>[
+const _overlayColors = <Color>[
   Colors.white,
   Colors.black,
   Color(0xFF0EA5E9),
@@ -401,8 +404,9 @@ class _CoverEditorSheetState extends State<CoverEditorSheet> {
           ),
           const SizedBox(height: 12),
           AspectRatio(
-            aspectRatio:
-                controller.value.aspectRatio == 0 ? 1 : controller.value.aspectRatio,
+            aspectRatio: controller.value.aspectRatio == 0
+                ? 1
+                : controller.value.aspectRatio,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(18),
               child: ValueListenableBuilder<VideoPlayerValue>(
@@ -417,7 +421,9 @@ class _CoverEditorSheetState extends State<CoverEditorSheet> {
           Slider(
             min: 0,
             max: sliderMax,
-            value: _currentPosition.inMilliseconds.clamp(0, sliderMax),
+            value: _currentPosition.inMilliseconds
+                .toDouble()
+                .clamp(0.0, sliderMax),
             onChanged: (value) {
               final newPosition = Duration(milliseconds: value.round());
               setState(() => _currentPosition = newPosition);
@@ -452,16 +458,17 @@ class _CoverEditorSheetState extends State<CoverEditorSheet> {
                         setState(() => _isUploading = true);
                         try {
                           final picker = ImagePicker();
+                          final localContext = context;
                           final image = await picker.pickImage(
                             source: ImageSource.gallery,
                             imageQuality: 92,
                           );
-                          if (image != null && mounted) {
-                            setState(() => _customCoverPath = image.path);
-                            Navigator.of(context).pop(
-                              CoverEditorResult(customCoverPath: image.path),
-                            );
-                          }
+                          if (image == null) return;
+                          if (!mounted || !localContext.mounted) return;
+                          setState(() => _customCoverPath = image.path);
+                          Navigator.of(localContext).pop(
+                            CoverEditorResult(customCoverPath: image.path),
+                          );
                         } finally {
                           if (mounted) {
                             setState(() => _isUploading = false);
@@ -471,10 +478,12 @@ class _CoverEditorSheetState extends State<CoverEditorSheet> {
                 icon: const Icon(Icons.image_outlined),
                 label: const Text('Upload photo'),
               ),
-              if (widget.initialFrame != null || widget.initialCustomCoverPath != null)
+              if (widget.initialFrame != null ||
+                  widget.initialCustomCoverPath != null)
                 TextButton.icon(
                   onPressed: () {
-                    Navigator.of(context).pop(const CoverEditorResult(clear: true));
+                    Navigator.of(context)
+                        .pop(const CoverEditorResult(clear: true));
                   },
                   icon: const Icon(Icons.delete_outline),
                   label: const Text('Remove cover'),

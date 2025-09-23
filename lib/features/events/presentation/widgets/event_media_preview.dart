@@ -78,8 +78,8 @@ class _EventMediaPreviewState extends State<EventMediaPreview> {
                     begin: Alignment.bottomCenter,
                     end: Alignment.topCenter,
                     colors: [
-                      Colors.black.withOpacity(0.4),
-                      Colors.black.withOpacity(0.0),
+                      Colors.black.withValues(alpha: 0.4),
+                      Colors.black.withValues(alpha: 0.0),
                     ],
                   ),
                 ),
@@ -97,7 +97,8 @@ class _EventMediaPreviewState extends State<EventMediaPreview> {
       return FutureBuilder<void>(
         future: _initialization,
         builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done || controller == null) {
+          if (snapshot.connectionState != ConnectionState.done ||
+              controller == null) {
             return _buildFallback();
           }
           if (widget.autoplay && !controller.value.isPlaying) {
@@ -188,15 +189,18 @@ class _OverlayLayer extends StatelessWidget {
           children: [
             for (final overlay in overlays)
               Positioned(
-                left: overlay.position.dx.clamp(0.0, 1.0) * constraints.maxWidth,
-                top: overlay.position.dy.clamp(0.0, 1.0) * constraints.maxHeight,
+                left:
+                    overlay.position.dx.clamp(0.0, 1.0) * constraints.maxWidth,
+                top:
+                    overlay.position.dy.clamp(0.0, 1.0) * constraints.maxHeight,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     color: overlay.backgroundColor,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     child: Text(
                       overlay.text,
                       style: TextStyle(

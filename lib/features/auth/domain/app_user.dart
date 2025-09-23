@@ -24,7 +24,7 @@ class AppUser {
     Set<String>? followedTags,
     Set<String>? rsvpEventIds,
     Map<String, List<String>>? eventRsvpSlotIds,
-    DateTime? lastUsernameChangeAt,
+    this.lastUsernameChangeAt,
     List<String>? followerIds,
     List<String>? followingIds,
   })  : bio = bio ?? '',
@@ -35,7 +35,6 @@ class AppUser {
         followedTags = followedTags ?? <String>{},
         rsvpEventIds = rsvpEventIds ?? <String>{},
         eventRsvpSlotIds = eventRsvpSlotIds ?? <String, List<String>>{},
-        lastUsernameChangeAt = lastUsernameChangeAt,
         followerIds = followerIds ?? <String>[],
         followingIds = followingIds ?? <String>[];
 
@@ -107,8 +106,7 @@ class AppUser {
       totalLikes: totalLikes ?? this.totalLikes,
       followedCandidateIds:
           followedCandidateIds ?? {...this.followedCandidateIds},
-      followedCreatorIds:
-          followedCreatorIds ?? {...this.followedCreatorIds},
+      followedCreatorIds: followedCreatorIds ?? {...this.followedCreatorIds},
       followedTags: followedTags ?? {...this.followedTags},
       rsvpEventIds: rsvpEventIds ?? {...this.rsvpEventIds},
       eventRsvpSlotIds: eventRsvpSlotIds ??
@@ -148,8 +146,7 @@ class AppUser {
         'likedContentIds': likedContentIds,
         'myContentIds': myContentIds,
         'eventRsvpSlotIds': {
-          for (final entry in eventRsvpSlotIds.entries)
-            entry.key: entry.value,
+          for (final entry in eventRsvpSlotIds.entries) entry.key: entry.value,
         },
         'lastUsernameChangeAt': lastUsernameChangeAt?.toIso8601String(),
         'followerIds': followerIds,
@@ -202,7 +199,8 @@ class AppUser {
     if (value is Map) {
       return value.map((key, dynamic val) {
         if (val is Iterable) {
-          return MapEntry(key.toString(), val.map((item) => item.toString()).toList());
+          return MapEntry(
+              key.toString(), val.map((item) => item.toString()).toList());
         }
         return MapEntry(key.toString(), <String>[]);
       });

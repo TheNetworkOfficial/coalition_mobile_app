@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -224,7 +223,8 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           AspectRatio(
-            aspectRatio: aspectRatio <= 0 ? _defaultVideoAspectRatio : aspectRatio,
+            aspectRatio:
+                aspectRatio <= 0 ? _defaultVideoAspectRatio : aspectRatio,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(24),
               child: LayoutBuilder(
@@ -238,7 +238,8 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                           child: OverlayLayer(
                             overlays: _overlays,
                             onOverlayDragged: (id, delta) {
-                              _updateOverlayPosition(id, delta, constraints.biggest);
+                              _updateOverlayPosition(
+                                  id, delta, constraints.biggest);
                             },
                             onOverlayTapped: (overlay) {
                               _openOverlayEditor(existing: overlay);
@@ -250,7 +251,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                         top: 12,
                         child: DecoratedBox(
                           decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.45),
+                            color: Colors.black.withValues(alpha: 0.45),
                             borderRadius: BorderRadius.circular(18),
                           ),
                           child: IconButton(
@@ -395,7 +396,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                     ),
                   ),
                   subtitle: Text(
-                    'Font: ${overlay.displayFontLabel} · Color: #${overlay.color.value.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}',
+                    'Font: ${overlay.displayFontLabel} · Color: #${overlay.color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}',
                     style: theme.textTheme.bodySmall,
                   ),
                   trailing: IconButton(
@@ -575,7 +576,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     if (overlayIndex == -1) {
       return;
     }
-          final overlay = _overlays[overlayIndex];
+    final overlay = _overlays[overlayIndex];
     if (canvasSize.width == 0 || canvasSize.height == 0) {
       return;
     }
@@ -622,7 +623,8 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     }
 
     if (result.delete && existing != null) {
-      setState(() => _overlays.removeWhere((element) => element.id == existing.id));
+      setState(
+          () => _overlays.removeWhere((element) => element.id == existing.id));
       return;
     }
 
@@ -647,6 +649,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     final controller = _videoController!;
     await controller.pause();
 
+    if (!mounted) return;
     final result = await showModalBottomSheet<CoverEditorResult>(
       context: context,
       isScrollControlled: true,
@@ -692,12 +695,11 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         _isGeneratingCover = true;
       });
       try {
-        final generated = await ref
-            .read(createContentServiceProvider)
-            .generateCoverFromVideo(
-              videoPath: _mediaFile!.path,
-              position: result.framePosition!,
-            );
+        final generated =
+            await ref.read(createContentServiceProvider).generateCoverFromVideo(
+                  videoPath: _mediaFile!.path,
+                  position: result.framePosition!,
+                );
         if (!mounted) return;
         setState(() {
           _generatedCoverPath = generated;

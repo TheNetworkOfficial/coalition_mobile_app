@@ -52,8 +52,9 @@ class _FeedCommentsSheetState extends ConsumerState<FeedCommentsSheet> {
     final roots = grouped[null] ?? const <FeedComment>[];
     for (final root in roots) {
       final entry = _CommentEntry.fromComment(root);
-      final replies = grouped[root.id]?.map(_CommentEntry.fromComment).toList() ??
-          <_CommentEntry>[];
+      final replies =
+          grouped[root.id]?.map(_CommentEntry.fromComment).toList() ??
+              <_CommentEntry>[];
       replies.sort(_compareReplies);
       _threads.add(_CommentThread(parent: entry, replies: replies));
     }
@@ -156,9 +157,8 @@ class _FeedCommentsSheetState extends ConsumerState<FeedCommentsSheet> {
   }
 
   Widget _buildComposer(ThemeData theme, String currentName) {
-    final replyingLabel = _replyTarget == null
-        ? null
-        : 'Replying to ${_replyTarget!.authorName}';
+    final replyingLabel =
+        _replyTarget == null ? null : 'Replying to ${_replyTarget!.authorName}';
 
     return Padding(
       padding: EdgeInsets.fromLTRB(
@@ -202,13 +202,13 @@ class _FeedCommentsSheetState extends ConsumerState<FeedCommentsSheet> {
                   decoration: InputDecoration(
                     hintText: 'Leave a comment as $currentName',
                     filled: true,
-                    fillColor: theme.colorScheme.surfaceVariant,
+                    fillColor: theme.colorScheme.surfaceContainerHighest,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(16),
                       borderSide: BorderSide.none,
                     ),
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
                   ),
                 ),
               ),
@@ -253,7 +253,8 @@ class _FeedCommentsSheetState extends ConsumerState<FeedCommentsSheet> {
         final thread = _threads.firstWhere(
           (t) => t.parent.id == parentId,
           orElse: () {
-            final newThread = _CommentThread(parent: entry, replies: <_CommentEntry>[]);
+            final newThread =
+                _CommentThread(parent: entry, replies: <_CommentEntry>[]);
             _threads.add(newThread);
             return newThread;
           },
@@ -289,11 +290,13 @@ class _FeedCommentsSheetState extends ConsumerState<FeedCommentsSheet> {
     final targetThread = entry.parentId == null
         ? _threads.firstWhere(
             (thread) => thread.parent.id == entry.id,
-            orElse: () => _CommentThread(parent: entry, replies: <_CommentEntry>[]),
+            orElse: () =>
+                _CommentThread(parent: entry, replies: <_CommentEntry>[]),
           )
         : _threads.firstWhere(
             (thread) => thread.parent.id == entry.parentId,
-            orElse: () => _CommentThread(parent: entry, replies: <_CommentEntry>[]),
+            orElse: () =>
+                _CommentThread(parent: entry, replies: <_CommentEntry>[]),
           );
     setState(() {
       _replyTarget = targetThread.parent;
@@ -446,9 +449,8 @@ class _CommentTile extends StatelessWidget {
         CircleAvatar(
           radius: 20,
           backgroundColor: theme.colorScheme.primaryContainer,
-          backgroundImage: entry.avatarUrl != null
-              ? NetworkImage(entry.avatarUrl!)
-              : null,
+          backgroundImage:
+              entry.avatarUrl != null ? NetworkImage(entry.avatarUrl!) : null,
           child: entry.avatarUrl == null
               ? Text(
                   _initial(entry.authorName),
@@ -463,9 +465,10 @@ class _CommentTile extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceVariant.withOpacity(0.4),
+              color: theme.colorScheme.surfaceContainerHighest
+                  .withValues(alpha: 0.4),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: borderColor.withOpacity(0.4)),
+              border: Border.all(color: borderColor.withValues(alpha: 0.4)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -498,9 +501,7 @@ class _CommentTile extends StatelessWidget {
                     IconButton(
                       onPressed: () => onLike(entry),
                       icon: Icon(
-                        entry.isLiked
-                            ? Icons.favorite
-                            : Icons.favorite_border,
+                        entry.isLiked ? Icons.favorite : Icons.favorite_border,
                         size: 20,
                         color: entry.isLiked
                             ? theme.colorScheme.primary
