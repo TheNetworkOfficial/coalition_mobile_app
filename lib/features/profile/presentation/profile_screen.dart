@@ -99,8 +99,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     onChangePhoto: () => _handleAvatarChange(context, user),
                     onFollowersTap: () =>
                         _showConnectionsSheet('Followers', followerConnections),
-                    onFollowingTap: () =>
-                        _showConnectionsSheet('Following', followingConnections),
+                    onFollowingTap: () => _showConnectionsSheet(
+                        'Following', followingConnections),
                     followersCount: followersCountDisplay,
                     followingCount: followingCountDisplay,
                   ),
@@ -179,7 +179,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         imageQuality: 85,
       );
       if (image == null) return;
-      await ref.read(authControllerProvider.notifier).updateProfileImage(image.path);
+      await ref
+          .read(authControllerProvider.notifier)
+          .updateProfileImage(image.path);
       if (!mounted || !context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Profile photo updated.')),
@@ -235,7 +237,8 @@ class _ProfileHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final displayName = user.displayName.isEmpty ? '@${user.username}' : user.displayName;
+    final displayName =
+        user.displayName.isEmpty ? '@${user.username}' : user.displayName;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -370,7 +373,8 @@ class _ProfileAvatar extends StatelessWidget {
                 ? Text(
                     displayName.isNotEmpty ? displayName[0].toUpperCase() : '?',
                     style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onPrimaryContainer,
+                          color:
+                              Theme.of(context).colorScheme.onPrimaryContainer,
                         ),
                   )
                 : null,
@@ -631,7 +635,8 @@ class _UserContentTile extends StatelessWidget {
               child: InkWell(
                 onTap: () {
                   Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => PostViewerScreen(initialContentId: content.id),
+                    builder: (_) =>
+                        PostViewerScreen(initialContentId: content.id),
                     fullscreenDialog: true,
                   ));
                 },
@@ -678,8 +683,8 @@ class _ContentPlaceholder extends StatelessWidget {
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-          colors.primaryContainer.withValues(alpha: 0.8),
-          colors.primary.withValues(alpha: 0.7),
+            colors.primaryContainer.withValues(alpha: 0.8),
+            colors.primary.withValues(alpha: 0.7),
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -721,8 +726,8 @@ class _EventTile extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           gradient: LinearGradient(
             colors: [
-          theme.colorScheme.primary.withValues(alpha: 0.85),
-          theme.colorScheme.primaryContainer.withValues(alpha: 0.9),
+              theme.colorScheme.primary.withValues(alpha: 0.85),
+              theme.colorScheme.primaryContainer.withValues(alpha: 0.9),
             ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -909,7 +914,8 @@ class _ConnectionsSheet extends StatelessWidget {
                       itemBuilder: (context, index) {
                         final connection = connections[index];
                         return ListTile(
-                          contentPadding: const EdgeInsets.symmetric(vertical: 4),
+                          contentPadding:
+                              const EdgeInsets.symmetric(vertical: 4),
                           leading: CircleAvatar(
                             radius: 24,
                             backgroundImage: connection.avatarUrl != null
@@ -925,7 +931,8 @@ class _ConnectionsSheet extends StatelessWidget {
                           subtitle: Text('@${connection.username}'),
                         );
                       },
-                      separatorBuilder: (context, index) => const Divider(height: 1),
+                      separatorBuilder: (context, index) =>
+                          const Divider(height: 1),
                       itemCount: connections.length,
                     ),
             ),
@@ -949,7 +956,8 @@ class _ProfileTabBarDelegate extends SliverPersistentHeaderDelegate {
   double get maxExtent => tabBar.preferredSize.height;
 
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+  Widget build(
+      BuildContext context, double shrinkOffset, bool overlapsContent) {
     return Container(
       color: backgroundColor,
       child: tabBar,
@@ -958,7 +966,8 @@ class _ProfileTabBarDelegate extends SliverPersistentHeaderDelegate {
 
   @override
   bool shouldRebuild(covariant _ProfileTabBarDelegate oldDelegate) {
-    return oldDelegate.tabBar != tabBar || oldDelegate.backgroundColor != backgroundColor;
+    return oldDelegate.tabBar != tabBar ||
+        oldDelegate.backgroundColor != backgroundColor;
   }
 }
 
@@ -1059,12 +1068,16 @@ class _ProfileSettingsSheet extends ConsumerWidget {
                     ? const Text('You already have candidate access.')
                     : hasPendingRequest
                         ? const Text('Your request is being reviewed.')
-                        : const Text('Submit campaign details to upgrade your account.'),
-                trailing: user.accountType == UserAccountType.candidate || hasPendingRequest
+                        : const Text(
+                            'Submit campaign details to upgrade your account.'),
+                trailing: user.accountType == UserAccountType.candidate ||
+                        hasPendingRequest
                     ? null
                     : const Icon(Icons.chevron_right),
-                enabled: user.accountType != UserAccountType.candidate && !hasPendingRequest,
-                onTap: user.accountType == UserAccountType.candidate || hasPendingRequest
+                enabled: user.accountType != UserAccountType.candidate &&
+                    !hasPendingRequest,
+                onTap: user.accountType == UserAccountType.candidate ||
+                        hasPendingRequest
                     ? null
                     : () {
                         Navigator.of(context).pop();

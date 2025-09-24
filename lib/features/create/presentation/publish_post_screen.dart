@@ -219,7 +219,9 @@ class _PublishPostScreenState extends ConsumerState<PublishPostScreen> {
                       // should not draw the editable overlay layer on top again
                       // (this caused the duplicated text). Otherwise render the
                       // transform + overlay preview as before.
-                      Image.file(File(widget.overrideMediaPath ?? widget.mediaPath), fit: BoxFit.cover),
+                      Image.file(
+                          File(widget.overrideMediaPath ?? widget.mediaPath),
+                          fit: BoxFit.cover),
                       if (widget.overrideMediaPath == null &&
                           (widget.composition != null ||
                               (widget.initialOverlays?.isNotEmpty ?? false)))

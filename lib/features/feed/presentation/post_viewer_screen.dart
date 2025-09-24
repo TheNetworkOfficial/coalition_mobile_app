@@ -70,7 +70,9 @@ class _PostViewerScreenState extends ConsumerState<PostViewerScreen> {
               isLiked: isLiked,
               isFollowingPoster: isFollowing,
               onShare: () {},
-              onToggleLike: () => ref.read(authControllerProvider.notifier).toggleLikeContent(content.id),
+              onToggleLike: () => ref
+                  .read(authControllerProvider.notifier)
+                  .toggleLikeContent(content.id),
               onComment: () {},
               onOpenProfile: () {},
               onToggleFollow: () {},
