@@ -1,12 +1,13 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:video_player/video_player.dart';
 
+import '../../../../core/video/adaptive_video_player.dart';
+import '../../../../core/video/video_track.dart';
 import '../../../feed/domain/feed_content.dart';
 import '../../domain/event.dart';
 
-class EventMediaPreview extends StatefulWidget {
+class EventMediaPreview extends StatelessWidget {
   const EventMediaPreview({
     required this.mediaUrl,
     required this.mediaType,
@@ -14,6 +15,7 @@ class EventMediaPreview extends StatefulWidget {
     required this.overlays,
     this.coverImagePath,
     this.autoplay = false,
+    this.videoTracks = const <VideoTrack>[],
     super.key,
   });
 
@@ -23,53 +25,22 @@ class EventMediaPreview extends StatefulWidget {
   final List<FeedTextOverlay> overlays;
   final String? coverImagePath;
   final bool autoplay;
-
-  @override
-  State<EventMediaPreview> createState() => _EventMediaPreviewState();
-}
-
-class _EventMediaPreviewState extends State<EventMediaPreview> {
-  VideoPlayerController? _controller;
-  Future<void>? _initialization;
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.mediaType == EventMediaType.video) {
-      _initializeVideo();
-    }
-  }
-
-  @override
-  void didUpdateWidget(covariant EventMediaPreview oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.mediaUrl != oldWidget.mediaUrl &&
-        widget.mediaType == EventMediaType.video) {
-      _disposeController();
-      _initializeVideo();
-    }
-  }
-
-  @override
-  void dispose() {
-    _disposeController();
-    super.dispose();
-  }
+  final List<VideoTrack> videoTracks;
 
   @override
   Widget build(BuildContext context) {
-    final aspectRatio = widget.aspectRatio <= 0 ? 16 / 9 : widget.aspectRatio;
+    final ratio = aspectRatio <= 0 ? 16 / 9 : aspectRatio;
     return AspectRatio(
-      aspectRatio: aspectRatio,
+      aspectRatio: ratio,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(18),
         child: Stack(
           fit: StackFit.expand,
           children: [
             _buildMedia(),
-            if (widget.overlays.isNotEmpty)
+            if (overlays.isNotEmpty)
               Positioned.fill(
-                child: _OverlayLayer(overlays: widget.overlays),
+                child: _OverlayLayer(overlays: overlays),
               ),
             Positioned.fill(
               child: DecoratedBox(
@@ -92,76 +63,32 @@ class _EventMediaPreviewState extends State<EventMediaPreview> {
   }
 
   Widget _buildMedia() {
-    if (widget.mediaType == EventMediaType.video) {
-      final controller = _controller;
-      return FutureBuilder<void>(
-        future: _initialization,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done ||
-              controller == null) {
-            return _buildFallback();
-          }
-          if (widget.autoplay && !controller.value.isPlaying) {
-            controller.play();
-          }
-          return FittedBox(
-            fit: BoxFit.cover,
-            child: SizedBox(
-              width: controller.value.size.width,
-              height: controller.value.size.height,
-              child: VideoPlayer(controller),
-            ),
-          );
-        },
+    if (mediaType == EventMediaType.video) {
+      final tracks = videoTracks.isNotEmpty
+          ? videoTracks
+          : <VideoTrack>[
+              VideoTrack(
+                uri: VideoTrack.ensureUri(mediaUrl),
+                label: 'Source',
+              ),
+            ];
+      return AdaptiveVideoPlayer(
+        tracks: tracks,
+        posterImageUrl: coverImagePath,
+        isActive: autoplay,
+        autoPlay: autoplay,
+        loop: true,
+        muted: true,
+        aspectRatio: aspectRatio,
+        showControls: true,
+        cacheEnabled: true,
       );
     }
 
     return Image(
-      image: _imageProvider(widget.coverImagePath ?? widget.mediaUrl),
+      image: _imageProvider(coverImagePath ?? mediaUrl),
       fit: BoxFit.cover,
     );
-  }
-
-  Widget _buildFallback() {
-    if (widget.coverImagePath != null) {
-      return Image(
-        image: _imageProvider(widget.coverImagePath!),
-        fit: BoxFit.cover,
-      );
-    }
-    return const ColoredBox(
-      color: Colors.black12,
-      child: Center(child: CircularProgressIndicator.adaptive()),
-    );
-  }
-
-  void _initializeVideo() {
-    final controller = _buildVideoController(widget.mediaUrl)
-      ..setLooping(true)
-      ..setVolume(0);
-    _initialization = controller.initialize().then((_) {
-      if (mounted && widget.autoplay) {
-        controller.play();
-      }
-    });
-    _controller = controller;
-  }
-
-  void _disposeController() {
-    _controller?.dispose();
-    _controller = null;
-    _initialization = null;
-  }
-
-  VideoPlayerController _buildVideoController(String source) {
-    final uri = Uri.tryParse(source);
-    if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
-      return VideoPlayerController.networkUrl(uri);
-    }
-    if (uri != null && uri.scheme == 'file') {
-      return VideoPlayerController.file(File(uri.toFilePath()));
-    }
-    return VideoPlayerController.file(File(source));
   }
 
   ImageProvider<Object> _imageProvider(String source) {

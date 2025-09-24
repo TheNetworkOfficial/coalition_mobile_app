@@ -993,6 +993,10 @@ class EventCard extends StatelessWidget {
           aspectRatio: event.mediaAspectRatio ?? 16 / 9,
           coverImagePath: event.coverImagePath,
           overlays: event.overlays,
+          videoTracks: [
+            if (event.adaptiveMediaStream != null) event.adaptiveMediaStream!,
+            ...event.mediaFallbackStreams,
+          ],
         ),
       );
     }

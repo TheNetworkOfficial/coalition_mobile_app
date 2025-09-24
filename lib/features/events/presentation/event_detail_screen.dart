@@ -343,6 +343,11 @@ class _EventHeader extends StatelessWidget {
             coverImagePath: event.coverImagePath,
             overlays: event.overlays,
             autoplay: true,
+            videoTracks: [
+              if (event.adaptiveMediaStream != null)
+                event.adaptiveMediaStream!,
+              ...event.mediaFallbackStreams,
+            ],
           ),
           const SizedBox(height: 20),
         ],
