@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:equatable/equatable.dart';
 
+import '../../../core/video/video_track.dart';
+
 enum FeedMediaType { image, video }
 
 enum FeedSourceType { candidate, event, creator }
@@ -64,6 +66,8 @@ class FeedContent extends Equatable {
     this.zipCode,
     this.distanceHint,
     this.isPromoted = false,
+    this.adaptiveStream,
+    this.fallbackStreams = const <VideoTrack>[],
   });
 
   final String id;
@@ -87,9 +91,30 @@ class FeedContent extends Equatable {
   final bool isPromoted;
   final List<FeedTextOverlay> overlays;
   final List<double>? compositionTransform;
+  final VideoTrack? adaptiveStream;
+  final List<VideoTrack> fallbackStreams;
 
   bool get isVideo => mediaType == FeedMediaType.video;
   bool get isImage => mediaType == FeedMediaType.image;
+
+  List<VideoTrack> get playbackTracks {
+    final tracks = <VideoTrack>[];
+    if (adaptiveStream != null) {
+      tracks.add(adaptiveStream!);
+    }
+    if (fallbackStreams.isNotEmpty) {
+      tracks.addAll(fallbackStreams);
+    }
+    if (tracks.isEmpty) {
+      tracks.add(
+        VideoTrack(
+          uri: VideoTrack.ensureUri(mediaUrl),
+          label: 'Source',
+        ),
+      );
+    }
+    return tracks;
+  }
 
   FeedContent copyWith({
     FeedMediaType? mediaType,
@@ -112,6 +137,8 @@ class FeedContent extends Equatable {
     bool? isPromoted,
     List<FeedTextOverlay>? overlays,
     Object? compositionTransform = _sentinel,
+    Object? adaptiveStream = _sentinel,
+    List<VideoTrack>? fallbackStreams,
   }) {
     return FeedContent(
       id: id,
@@ -142,6 +169,10 @@ class FeedContent extends Equatable {
       compositionTransform: compositionTransform == _sentinel
           ? this.compositionTransform
           : compositionTransform as List<double>?,
+      adaptiveStream: adaptiveStream == _sentinel
+          ? this.adaptiveStream
+          : adaptiveStream as VideoTrack?,
+      fallbackStreams: fallbackStreams ?? this.fallbackStreams,
     );
   }
 
@@ -170,6 +201,8 @@ class FeedContent extends Equatable {
         isPromoted,
         overlays,
         compositionTransform,
+        adaptiveStream,
+        fallbackStreams,
       ];
 }
 

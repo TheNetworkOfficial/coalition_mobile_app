@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:video_player/video_player.dart';
 
+import '../../../../core/video/adaptive_video_player.dart';
 import '../../../create/presentation/widgets/static_transform_view.dart';
 import '../../../feed/domain/feed_content.dart';
 
@@ -444,69 +444,23 @@ class _FeedMedia extends StatefulWidget {
 }
 
 class _FeedMediaState extends State<_FeedMedia> {
-  VideoPlayerController? _controller;
-  Future<void>? _initializeVideoFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.content.isVideo) {
-      _initializeVideo();
-    }
-  }
-
-  @override
-  void didUpdateWidget(covariant _FeedMedia oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.content.mediaUrl != oldWidget.content.mediaUrl &&
-        widget.content.isVideo) {
-      _disposeController();
-      _initializeVideo();
-    }
-    if (widget.isActive != oldWidget.isActive && _controller != null) {
-      if (widget.isActive) {
-        _controller!.play();
-      } else {
-        _controller!.pause();
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _disposeController();
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
     final content = widget.content;
 
     if (content.isVideo) {
-      final controller = _controller;
-      return FutureBuilder<void>(
-        future: _initializeVideoFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done ||
-              controller == null) {
-            return _buildPlaceholder();
-          }
-          if (widget.isActive && !controller.value.isPlaying) {
-            controller.play();
-          } else if (!widget.isActive && controller.value.isPlaying) {
-            controller.pause();
-          }
-          return _wrapWithTransform(
-            FittedBox(
-              fit: BoxFit.cover,
-              child: SizedBox(
-                width: controller.value.size.width,
-                height: controller.value.size.height,
-                child: VideoPlayer(controller),
-              ),
-            ),
-          );
-        },
+      return _wrapWithTransform(
+        AdaptiveVideoPlayer(
+          tracks: content.playbackTracks,
+          posterImageUrl: content.thumbnailUrl,
+          isActive: widget.isActive,
+          autoPlay: true,
+          loop: true,
+          muted: true,
+          aspectRatio: content.aspectRatio,
+          showControls: false,
+          cacheEnabled: true,
+        ),
       );
     }
 
@@ -516,48 +470,6 @@ class _FeedMediaState extends State<_FeedMedia> {
         fit: BoxFit.cover,
       ),
     );
-  }
-
-  void _initializeVideo() {
-    final controller = _buildVideoController(widget.content.mediaUrl)
-      ..setLooping(true)
-      ..setVolume(0);
-    _initializeVideoFuture = controller.initialize().then((_) {
-      if (mounted && widget.isActive) {
-        controller.play();
-      }
-    });
-    _controller = controller;
-  }
-
-  void _disposeController() {
-    _controller?.dispose();
-    _controller = null;
-  }
-
-  Widget _buildPlaceholder() {
-    return DecoratedBox(
-      decoration: const BoxDecoration(color: Colors.black12),
-      child: widget.content.thumbnailUrl != null
-          ? Image(
-              image: _imageProvider(widget.content.thumbnailUrl!),
-              fit: BoxFit.cover,
-            )
-          : const Center(
-              child: CircularProgressIndicator.adaptive(),
-            ),
-    );
-  }
-
-  VideoPlayerController _buildVideoController(String source) {
-    final uri = Uri.tryParse(source);
-    if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
-      return VideoPlayerController.networkUrl(uri);
-    }
-    if (uri != null && uri.scheme == 'file') {
-      return VideoPlayerController.file(File(uri.toFilePath()));
-    }
-    return VideoPlayerController.file(File(source));
   }
 
   ImageProvider<Object> _imageProvider(String source) {
