@@ -120,7 +120,7 @@ class _EventPreviewPlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
+    return const DecoratedBox(
       decoration: const BoxDecoration(color: Colors.black26),
       child: const Center(
         child: Icon(

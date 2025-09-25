@@ -35,7 +35,8 @@ class VideoUploadRepository {
     File? cover,
     required VideoUploadRequest request,
   }) async {
-    final includeCover = cover != null && await cover.exists();
+    final coverFile = cover;
+    final includeCover = coverFile != null && await coverFile.exists();
     final session = await _createSession(
       request: request,
       includeCover: includeCover,
@@ -51,13 +52,13 @@ class VideoUploadRepository {
     await _uploadToSignedUrl(target: videoTarget, file: video);
     uploaded[VideoUploadAssetType.video] = videoTarget;
 
-    if (includeCover) {
+    if (includeCover && coverFile != null) {
       final coverTarget = session.targetFor(VideoUploadAssetType.cover);
       if (coverTarget == null) {
         throw HttpException('Upload session missing cover target.',
             uri: _videosUri);
       }
-      await _uploadToSignedUrl(target: coverTarget, file: cover!);
+      await _uploadToSignedUrl(target: coverTarget, file: coverFile);
       uploaded[VideoUploadAssetType.cover] = coverTarget;
     }
 
