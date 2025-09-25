@@ -473,8 +473,7 @@ class _MediaPickerScreenState extends State<MediaPickerScreen> {
                   _proxyProgress != null
                       ? TranscodeProgressOverlay(progress: _proxyProgress)
                       : const Center(
-                          child:
-                              CircularProgressIndicator(color: Colors.white),
+                          child: CircularProgressIndicator(color: Colors.white),
                         )
                 else if (asset == null || file == null)
                   const Center(
