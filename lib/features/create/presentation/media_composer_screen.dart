@@ -83,8 +83,7 @@ class _MediaComposerScreenState extends State<MediaComposerScreen> {
 
   void _initializeVideo() {
     final controller = VideoPlayerController.file(File(widget.mediaPath))
-      ..setLooping(true)
-      ..setVolume(0);
+      ..setLooping(true);
     _videoInitialization = controller.initialize().then((_) {
       if (mounted) {
         setState(() {

@@ -214,8 +214,7 @@ class _MediaPickerScreenState extends State<MediaPickerScreen> {
     VideoPlayerController? controller;
     if (asset.type == AssetType.video) {
       controller = VideoPlayerController.file(file)
-        ..setLooping(true)
-        ..setVolume(0);
+        ..setLooping(true);
       try {
         await controller.initialize();
         await controller.play();
