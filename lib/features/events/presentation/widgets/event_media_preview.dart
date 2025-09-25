@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import 'package:coalition_mobile_app/core/utils/media_type_utils.dart';
+
 import '../../../../core/video/adaptive_video_player.dart';
 import '../../../../core/video/video_track.dart';
 import '../../../feed/domain/feed_content.dart';
@@ -72,9 +74,11 @@ class EventMediaPreview extends StatelessWidget {
                 label: 'Source',
               ),
             ];
+      final posterImage =
+          isLikelyImageSource(coverImagePath) ? coverImagePath : null;
       return AdaptiveVideoPlayer(
         tracks: tracks,
-        posterImageUrl: coverImagePath,
+        posterImageUrl: posterImage,
         isActive: autoplay,
         autoPlay: autoplay,
         loop: true,
@@ -85,9 +89,17 @@ class EventMediaPreview extends StatelessWidget {
       );
     }
 
+    final imageSource = isLikelyImageSource(coverImagePath)
+        ? coverImagePath
+        : (isLikelyImageSource(mediaUrl) ? mediaUrl : null);
+    if (imageSource == null) {
+      return const _EventPreviewPlaceholder();
+    }
     return Image(
-      image: _imageProvider(coverImagePath ?? mediaUrl),
+      image: _imageProvider(imageSource),
       fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) =>
+          const _EventPreviewPlaceholder(),
     );
   }
 
@@ -100,6 +112,24 @@ class EventMediaPreview extends StatelessWidget {
       return FileImage(File(uri.toFilePath()));
     }
     return FileImage(File(source));
+  }
+}
+
+class _EventPreviewPlaceholder extends StatelessWidget {
+  const _EventPreviewPlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: const BoxDecoration(color: Colors.black26),
+      child: const Center(
+        child: Icon(
+          Icons.image_outlined,
+          color: Colors.white60,
+          size: 28,
+        ),
+      ),
+    );
   }
 }
 
