@@ -14,8 +14,11 @@ class VideoTimeline {
   });
 
   /// Creates an empty timeline for the provided [sourcePath].
-  factory VideoTimeline.initial(String sourcePath) =>
-      VideoTimeline(sourcePath: sourcePath);
+  factory VideoTimeline.initial(String sourcePath) => VideoTimeline(
+        sourcePath: sourcePath,
+        trimStartMs: 0,
+        coverTimeMs: 0,
+      );
 
   /// Location of the original video on disk.
   final String sourcePath;
