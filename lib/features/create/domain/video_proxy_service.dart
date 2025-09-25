@@ -103,7 +103,7 @@ class VideoProxyService {
     }
     _jobs[originalPath] = job;
 
-    job.subscription = VideoCompress.compressProgress$.listen((progress) {
+    job.subscription = VideoCompress.subscribe((progress) {
       final clamped = (progress.clamp(0, 100)) / 100;
       for (final listener in List<void Function(double progress)>.of(job.listeners)) {
         listener(clamped);
@@ -130,7 +130,7 @@ class VideoProxyService {
       } catch (error, stackTrace) {
         job.completer.completeError(error, stackTrace);
       } finally {
-        await job.subscription?.cancel();
+        job.subscription?.unsubscribe();
         _jobs.remove(originalPath);
       }
     }();
@@ -145,5 +145,5 @@ class _ProxyJob {
   final Completer<VideoProxyResult> completer = Completer<VideoProxyResult>();
   final List<void Function(double progress)> listeners =
       <void Function(double progress)>[];
-  StreamSubscription<double>? subscription;
+  Subscription? subscription;
 }
