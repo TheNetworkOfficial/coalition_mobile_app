@@ -122,6 +122,38 @@ class VideoUploadRequest {
 
 enum VideoUploadJobStatus { processing, ready, failed }
 
+class VideoUploadRendition {
+  const VideoUploadRendition({
+    required this.id,
+    this.label,
+    this.playlistUrl,
+    this.mp4Url,
+    this.width,
+    this.height,
+    this.bitrateKbps,
+  });
+
+  factory VideoUploadRendition.fromJson(Map<String, dynamic> json) {
+    return VideoUploadRendition(
+      id: json['id'] as String? ?? 'rendition',
+      label: json['label'] as String?,
+      playlistUrl: json['playlistUrl'] as String?,
+      mp4Url: json['mp4Url'] as String?,
+      width: json['width'] as int?,
+      height: json['height'] as int?,
+      bitrateKbps: json['bitrateKbps'] as int?,
+    );
+  }
+
+  final String id;
+  final String? label;
+  final String? playlistUrl;
+  final String? mp4Url;
+  final int? width;
+  final int? height;
+  final int? bitrateKbps;
+}
+
 class VideoUploadJob {
   const VideoUploadJob({
     required this.id,
@@ -129,16 +161,27 @@ class VideoUploadJob {
     required this.playlistUrl,
     required this.coverUrl,
     required this.error,
+    required this.renditions,
   });
 
   factory VideoUploadJob.fromJson(Map<String, dynamic> json) {
     final outputs = (json['outputs'] as Map<String, dynamic>?) ?? const {};
+    final renditionList = outputs['renditions'];
+    final renditions = <VideoUploadRendition>[];
+    if (renditionList is List) {
+      for (final item in renditionList) {
+        if (item is Map<String, dynamic>) {
+          renditions.add(VideoUploadRendition.fromJson(item));
+        }
+      }
+    }
     return VideoUploadJob(
       id: json['jobId'] as String? ?? json['id'] as String,
       status: _parseStatus(json['status'] as String? ?? 'processing'),
       playlistUrl: outputs['playlistUrl'] as String?,
       coverUrl: outputs['coverUrl'] as String?,
       error: json['error'] as String?,
+      renditions: renditions,
     );
   }
 
@@ -147,6 +190,7 @@ class VideoUploadJob {
   final String? playlistUrl;
   final String? coverUrl;
   final String? error;
+  final List<VideoUploadRendition> renditions;
 
   bool get isComplete =>
       status == VideoUploadJobStatus.ready ||
