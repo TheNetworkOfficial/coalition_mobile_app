@@ -360,7 +360,6 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
           if (!controller.value.isPlaying) {
             controller
               ..setLooping(true)
-              ..setVolume(0)
               ..play();
           }
           return FittedBox(
@@ -674,7 +673,6 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
           });
           controller
             ..setLooping(true)
-            ..setVolume(0)
             ..play();
         });
       });
