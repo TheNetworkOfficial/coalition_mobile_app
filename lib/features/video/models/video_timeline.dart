@@ -11,6 +11,7 @@ class VideoTimeline {
     this.playbackSpeed = 1.0,
     this.overlayItems = const <VideoOverlayItem>[],
     this.coverTimeMs,
+    this.coverImagePath,
   });
 
   /// Creates an empty timeline for the provided [sourcePath].
@@ -44,6 +45,9 @@ class VideoTimeline {
   /// Cover frame time in milliseconds.
   final int? coverTimeMs;
 
+  /// Cached path to the generated PNG cover image on disk.
+  final String? coverImagePath;
+
   VideoTimeline copyWith({
     String? sourcePath,
     int? trimStartMs,
@@ -53,6 +57,7 @@ class VideoTimeline {
     double? playbackSpeed,
     List<VideoOverlayItem>? overlayItems,
     int? coverTimeMs,
+    Object? coverImagePath = _unset,
   }) {
     return VideoTimeline(
       sourcePath: sourcePath ?? this.sourcePath,
@@ -63,6 +68,9 @@ class VideoTimeline {
       playbackSpeed: playbackSpeed ?? this.playbackSpeed,
       overlayItems: overlayItems ?? this.overlayItems,
       coverTimeMs: coverTimeMs ?? this.coverTimeMs,
+      coverImagePath: identical(coverImagePath, _unset)
+          ? this.coverImagePath
+          : coverImagePath as String?,
     );
   }
 }
@@ -80,3 +88,5 @@ class VideoOverlayItem {
   /// Optional developer-friendly label.
   final String? label;
 }
+
+const Object _unset = Object();
