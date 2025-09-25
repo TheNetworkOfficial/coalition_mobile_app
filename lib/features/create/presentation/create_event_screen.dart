@@ -6,6 +6,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
 import 'package:video_player/video_player.dart';
 
+import 'package:coalition_mobile_app/core/utils/media_type_utils.dart';
+
 import '../../auth/data/auth_controller.dart';
 import '../../auth/domain/app_user.dart';
 import '../../candidates/data/candidate_providers.dart';
@@ -842,12 +844,17 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
       return;
     }
 
-    if (result.customCoverPath != null) {
-      setState(() {
-        _generatedCoverPath = null;
-        _customCoverFile = XFile(result.customCoverPath!);
-        _coverFramePosition = null;
-      });
+    final customCoverPath = result.customCoverPath;
+    if (customCoverPath != null) {
+      if (!isLikelyImageSource(customCoverPath)) {
+        _showError('Please choose an image file for the cover.');
+      } else {
+        setState(() {
+          _generatedCoverPath = null;
+          _customCoverFile = XFile(customCoverPath);
+          _coverFramePosition = null;
+        });
+      }
       if (!mounted) return;
       await controller.play();
       return;
@@ -865,10 +872,14 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                   position: result.framePosition!,
                 );
         if (!mounted) return;
-        setState(() {
-          _generatedCoverPath = generated;
-          _customCoverFile = null;
-        });
+        if (!isLikelyImageSource(generated)) {
+          _showError('The selected frame is not a supported image.');
+        } else {
+          setState(() {
+            _generatedCoverPath = generated;
+            _customCoverFile = null;
+          });
+        }
       } catch (error) {
         _showError('We could not save that frame as a cover. $error');
       } finally {

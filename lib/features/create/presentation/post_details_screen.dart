@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:coalition_mobile_app/core/utils/media_type_utils.dart';
+
 import '../../feed/domain/feed_content.dart';
 import '../data/create_content_service.dart';
 import '../domain/create_post_request.dart';
@@ -46,7 +48,9 @@ class _PostDetailsScreenState extends ConsumerState<PostDetailsScreen> {
   @override
   void initState() {
     super.initState();
-    _coverImagePath = widget.initialCoverPath;
+    if (isLikelyImageSource(widget.initialCoverPath)) {
+      _coverImagePath = widget.initialCoverPath;
+    }
     if (widget.mediaType == FeedMediaType.video && _coverImagePath == null) {
       _generateCover(fromPosition: const Duration(seconds: 1));
     }
@@ -61,7 +65,10 @@ class _PostDetailsScreenState extends ConsumerState<PostDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final preview = _coverImagePath ?? widget.mediaPath;
+    final preview = widget.mediaType == FeedMediaType.image &&
+            isLikelyImageSource(widget.mediaPath)
+        ? widget.mediaPath
+        : _coverImagePath;
 
     return Scaffold(
       appBar: AppBar(
@@ -344,6 +351,15 @@ class _PostDetailsScreenState extends ConsumerState<PostDetailsScreen> {
                 position: fromPosition,
               );
       if (!mounted) return;
+      if (!isLikelyImageSource(path)) {
+        setState(() => _coverImagePath = null);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('The selected frame is not a valid image.'),
+          ),
+        );
+        return;
+      }
       setState(() {
         _coverImagePath = path;
       });
@@ -392,7 +408,7 @@ class _PreviewCard extends StatelessWidget {
     this.isLoading = false,
   });
 
-  final String previewPath;
+  final String? previewPath;
   final VoidCallback? onEditCover;
   final bool isLoading;
 
@@ -452,20 +468,53 @@ class _PreviewCard extends StatelessWidget {
 class _PreviewImage extends StatelessWidget {
   const _PreviewImage({required this.path});
 
-  final String path;
+  final String? path;
 
   @override
   Widget build(BuildContext context) {
-    final uri = Uri.tryParse(path);
-    ImageProvider provider;
-    if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
-      provider = NetworkImage(path);
-    } else if (uri != null && uri.scheme == 'file') {
-      provider = FileImage(File(uri.toFilePath()));
-    } else {
-      provider = FileImage(File(path));
+    final provider = _resolveImageProvider(path);
+    if (provider == null) {
+      return const _PreviewPlaceholder();
     }
-    return Image(image: provider, fit: BoxFit.cover);
+    return Image(
+      image: provider,
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) =>
+          const _PreviewPlaceholder(),
+    );
+  }
+
+  ImageProvider<Object>? _resolveImageProvider(String? source) {
+    if (!isLikelyImageSource(source)) {
+      return null;
+    }
+
+    final uri = Uri.tryParse(source!);
+    if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
+      return NetworkImage(source);
+    }
+    if (uri != null && uri.scheme == 'file') {
+      return FileImage(File(uri.toFilePath()));
+    }
+    return FileImage(File(source));
+  }
+}
+
+class _PreviewPlaceholder extends StatelessWidget {
+  const _PreviewPlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: const BoxDecoration(color: Colors.black26),
+      child: const Center(
+        child: Icon(
+          Icons.image_outlined,
+          color: Colors.white60,
+          size: 28,
+        ),
+      ),
+    );
   }
 }
 
