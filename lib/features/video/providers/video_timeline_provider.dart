@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/video_timeline.dart';
+import '../platform/video_native.dart';
 
 class VideoTimelineNotifier extends Notifier<VideoTimeline?> {
   @override
@@ -47,6 +48,34 @@ class VideoTimelineNotifier extends Notifier<VideoTimeline?> {
       return;
     }
     state = VideoTimeline.initial(current.sourcePath);
+  }
+
+  void setCoverTime(int timeMs) {
+    final current = state;
+    if (current == null) {
+      return;
+    }
+    state = current.copyWith(coverTimeMs: timeMs);
+  }
+
+  Future<void> generateCover({
+    required String filePath,
+    required int timeMs,
+  }) async {
+    final current = state;
+    if (current == null) {
+      return;
+    }
+
+    final coverPath = await VideoNative.generateCoverImage(
+      filePath,
+      seconds: timeMs / 1000,
+    );
+
+    state = current.copyWith(
+      coverTimeMs: timeMs,
+      coverImagePath: coverPath,
+    );
   }
 }
 
