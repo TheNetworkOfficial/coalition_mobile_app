@@ -83,6 +83,7 @@ class AuthController extends StateNotifier<AuthState> {
   final GoogleSignIn _googleSignIn;
 
   static const _uuid = Uuid();
+  // cSpell:ignore roundtable
   static const List<String> _defaultLikedContentIds = [
     'organizing-first-shift',
     'community-roundtable',

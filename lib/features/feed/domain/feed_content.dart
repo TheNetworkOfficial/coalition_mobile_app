@@ -5,6 +5,8 @@ import '../../../core/video/video_track.dart';
 
 enum FeedMediaType { image, video }
 
+enum FeedMediaProcessingStatus { ready, processing, failed }
+
 enum FeedSourceType { candidate, event, creator }
 
 enum FeedInteractionType { like, comment, share, follow }
@@ -68,6 +70,9 @@ class FeedContent extends Equatable {
     this.isPromoted = false,
     this.adaptiveStream,
     this.fallbackStreams = const <VideoTrack>[],
+    this.processingStatus = FeedMediaProcessingStatus.ready,
+    this.processingJobId,
+    this.processingError,
   });
 
   final String id;
@@ -93,26 +98,50 @@ class FeedContent extends Equatable {
   final List<double>? compositionTransform;
   final VideoTrack? adaptiveStream;
   final List<VideoTrack> fallbackStreams;
+  final FeedMediaProcessingStatus processingStatus;
+  final String? processingJobId;
+  final String? processingError;
 
   bool get isVideo => mediaType == FeedMediaType.video;
   bool get isImage => mediaType == FeedMediaType.image;
+  bool get isProcessing =>
+      processingStatus == FeedMediaProcessingStatus.processing;
+  bool get hasProcessingError =>
+      processingStatus == FeedMediaProcessingStatus.failed;
 
   List<VideoTrack> get playbackTracks {
+    if (processingStatus != FeedMediaProcessingStatus.ready) {
+      return const <VideoTrack>[];
+    }
+    final added = <String>{};
     final tracks = <VideoTrack>[];
+
+    void addTrack(VideoTrack track) {
+      final key = track.uri.toString();
+      if (key.isEmpty || added.contains(key)) {
+        return;
+      }
+      added.add(key);
+      tracks.add(track);
+    }
+
     if (adaptiveStream != null) {
-      tracks.add(adaptiveStream!);
+      addTrack(adaptiveStream!);
     }
-    if (fallbackStreams.isNotEmpty) {
-      tracks.addAll(fallbackStreams);
+
+    // Always seed the list with the primary media URL so we can fall back to
+    // the original asset even if no processed renditions are present.
+    final mediaUri = VideoTrack.ensureUri(mediaUrl);
+    final fallbackMatch = fallbackStreams.firstWhere(
+      (track) => track.uri.toString() == mediaUri.toString(),
+      orElse: () => VideoTrack(uri: mediaUri, label: 'Source'),
+    );
+    addTrack(fallbackMatch);
+
+    for (final track in fallbackStreams) {
+      addTrack(track);
     }
-    if (tracks.isEmpty) {
-      tracks.add(
-        VideoTrack(
-          uri: VideoTrack.ensureUri(mediaUrl),
-          label: 'Source',
-        ),
-      );
-    }
+
     return tracks;
   }
 
@@ -139,6 +168,9 @@ class FeedContent extends Equatable {
     Object? compositionTransform = _sentinel,
     Object? adaptiveStream = _sentinel,
     List<VideoTrack>? fallbackStreams,
+    FeedMediaProcessingStatus? processingStatus,
+    Object? processingJobId = _sentinel,
+    Object? processingError = _sentinel,
   }) {
     return FeedContent(
       id: id,
@@ -173,6 +205,13 @@ class FeedContent extends Equatable {
           ? this.adaptiveStream
           : adaptiveStream as VideoTrack?,
       fallbackStreams: fallbackStreams ?? this.fallbackStreams,
+      processingStatus: processingStatus ?? this.processingStatus,
+      processingJobId: processingJobId == _sentinel
+          ? this.processingJobId
+          : processingJobId as String?,
+      processingError: processingError == _sentinel
+          ? this.processingError
+          : processingError as String?,
     );
   }
 
@@ -203,6 +242,9 @@ class FeedContent extends Equatable {
         compositionTransform,
         adaptiveStream,
         fallbackStreams,
+        processingStatus,
+        processingJobId,
+        processingError,
       ];
 }
 

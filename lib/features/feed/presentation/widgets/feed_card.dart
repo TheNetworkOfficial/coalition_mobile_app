@@ -449,9 +449,44 @@ class _FeedMediaState extends State<_FeedMedia> {
     final content = widget.content;
 
     if (content.isVideo) {
+      if (content.processingStatus == FeedMediaProcessingStatus.processing) {
+        return _wrapWithTransform(
+          _ProcessingPlaceholder(
+            imageProvider: _maybeImageProvider(content.thumbnailUrl),
+            title: 'Processing…',
+            subtitle: 'We\'ll notify you when the video is ready.',
+            icon: Icons.cloud_upload_outlined,
+          ),
+        );
+      }
+
+      if (content.processingStatus == FeedMediaProcessingStatus.failed) {
+        return _wrapWithTransform(
+          _ProcessingPlaceholder(
+            imageProvider: _maybeImageProvider(content.thumbnailUrl),
+            title: 'Processing failed',
+            subtitle: content.processingError ??
+                'Tap to retry once the issue is resolved.',
+            icon: Icons.error_outline,
+          ),
+        );
+      }
+
+      final tracks = content.playbackTracks;
+      if (tracks.isEmpty) {
+        return _wrapWithTransform(
+          _ProcessingPlaceholder(
+            imageProvider: _maybeImageProvider(content.thumbnailUrl),
+            title: 'Video unavailable',
+            subtitle: 'We\'re unable to play this video right now.',
+            icon: Icons.hourglass_empty,
+          ),
+        );
+      }
+
       return _wrapWithTransform(
         AdaptiveVideoPlayer(
-          tracks: content.playbackTracks,
+          tracks: tracks,
           posterImageUrl: content.thumbnailUrl,
           isActive: widget.isActive,
           autoPlay: true,
@@ -483,6 +518,13 @@ class _FeedMediaState extends State<_FeedMedia> {
     return FileImage(File(source));
   }
 
+  ImageProvider<Object>? _maybeImageProvider(String? source) {
+    if (source == null || source.isEmpty) {
+      return null;
+    }
+    return _imageProvider(source);
+  }
+
   Widget _wrapWithTransform(Widget child) {
     final transform = widget.content.compositionTransform;
     if (transform == null || transform.isEmpty) {
@@ -491,6 +533,64 @@ class _FeedMediaState extends State<_FeedMedia> {
     return StaticTransformView(
       transformValues: transform,
       child: child,
+    );
+  }
+}
+
+class _ProcessingPlaceholder extends StatelessWidget {
+  const _ProcessingPlaceholder({
+    this.imageProvider,
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+  });
+
+  final ImageProvider<Object>? imageProvider;
+  final String title;
+  final String subtitle;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        if (imageProvider != null)
+          Image(image: imageProvider!, fit: BoxFit.cover)
+        else
+          const DecoratedBox(
+            decoration: BoxDecoration(color: Colors.black87),
+          ),
+        Container(color: Colors.black.withValues(alpha: 0.6)),
+        Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: Colors.white, size: 40),
+              const SizedBox(height: 16),
+              Text(
+                title,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Text(
+                  subtitle,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: Colors.white70,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

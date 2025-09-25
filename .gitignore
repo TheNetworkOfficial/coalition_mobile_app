@@ -16,3 +16,10 @@ build/
 # Misc
 .DS_Store
 Thumbs.db
+
+# Backend functions & local server
+backend/functions/**/node_modules/
+backend/functions/**/dist/
+backend/server/node_modules/
+backend/server/media/
+backend/server/uploads/

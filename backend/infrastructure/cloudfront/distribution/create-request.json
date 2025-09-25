@@ -1,0 +1,32 @@
+{
+  "CallerReference": "1758741736",
+  "Comment": "lux-video-cdn",
+  "Enabled": true,
+  "Origins": {
+    "Items": [{
+      "Id": "s3-origin",
+      "DomainName": "lux-video-dev-262a61d7.s3.us-west-2.amazonaws.com",
+      "S3OriginConfig": { "OriginAccessIdentity": "" },
+      "OriginAccessControlId": "E2FKUOZ4IP1299"
+    }],
+    "Quantity": 1
+  },
+  "DefaultCacheBehavior": {
+    "TargetOriginId": "s3-origin",
+    "ViewerProtocolPolicy": "redirect-to-https",
+    "AllowedMethods": {
+      "Items": ["GET","HEAD"],
+      "CachedMethods": {
+        "Items": ["GET","HEAD"],
+        "Quantity": 2
+      },
+      "Quantity": 2
+    },
+    "Compress": true,
+    "ForwardedValues": { "QueryString": false, "Cookies": { "Forward": "none" } },
+    "MinTTL": 0,
+    "DefaultTTL": 86400,
+    "MaxTTL": 31536000
+  },
+  "PriceClass": "PriceClass_100"
+}

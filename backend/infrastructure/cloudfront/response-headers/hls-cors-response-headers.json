@@ -1,0 +1,39 @@
+{
+  "Name": "lux-video-cors",
+  "Comment": "CORS for HLS/MP4",
+  "CorsConfig": {
+    "AccessControlAllowOrigins": {
+      "Quantity": 1,
+      "Items": [
+        "*"
+      ]
+    },
+    "AccessControlAllowHeaders": {
+      "Quantity": 3,
+      "Items": [
+        "*",
+        "content-type",
+        "authorization"
+      ]
+    },
+    "AccessControlAllowMethods": {
+      "Quantity": 5,
+      "Items": [
+        "GET",
+        "HEAD",
+        "OPTIONS",
+        "PUT",
+        "POST"
+      ]
+    },
+    "AccessControlAllowCredentials": false,
+    "AccessControlExposeHeaders": {
+      "Quantity": 1,
+      "Items": [
+        "ETag"
+      ]
+    },
+    "AccessControlMaxAgeSec": 600,
+    "OriginOverride": true
+  }
+}

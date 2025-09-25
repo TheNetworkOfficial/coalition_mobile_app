@@ -5,6 +5,7 @@ import '../../feed/data/feed_content_store.dart';
 import '../../feed/domain/feed_content.dart';
 import 'widgets/feed_card.dart';
 import '../../auth/data/auth_controller.dart';
+import '../../auth/domain/app_user.dart';
 
 class PostViewerScreen extends ConsumerStatefulWidget {
   const PostViewerScreen({
@@ -83,7 +84,7 @@ class _PostViewerScreenState extends ConsumerState<PostViewerScreen> {
     );
   }
 
-  bool _isFollowing(user, FeedContent content) {
+  bool _isFollowing(AppUser? user, FeedContent content) {
     if (user == null) return false;
     switch (content.sourceType) {
       case FeedSourceType.candidate:

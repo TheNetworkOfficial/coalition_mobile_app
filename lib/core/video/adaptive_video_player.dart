@@ -1,16 +1,17 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:better_player/better_player.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:video_player/video_player.dart';
 
 import 'video_track.dart';
 
-/// High level video widget that wraps BetterPlayer and adds:
+/// High level video widget that provides:
 ///
 /// * automatic fallback between multiple renditions
-/// * optional local caching
+/// * optional local caching for progressive streams
 /// * a minimal quality picker exposed through a popup menu
 /// * graceful buffering/error overlays so users never stare at a black frame
 class AdaptiveVideoPlayer extends StatefulWidget {
@@ -46,7 +47,9 @@ class AdaptiveVideoPlayer extends StatefulWidget {
 }
 
 class _AdaptiveVideoPlayerState extends State<AdaptiveVideoPlayer> {
-  BetterPlayerController? _controller;
+  final BaseCacheManager _cacheManager = DefaultCacheManager();
+
+  VideoPlayerController? _controller;
   List<VideoTrack> _tracks = const <VideoTrack>[];
   int _currentTrackIndex = 0;
   bool _isBuffering = false;
@@ -55,6 +58,10 @@ class _AdaptiveVideoPlayerState extends State<AdaptiveVideoPlayer> {
   String? _errorMessage;
   String? _infoMessage;
   Timer? _infoTimer;
+  int _trackRequestId = 0;
+  DateTime? _lastDiagnosticsPrint;
+
+  VideoPlayerValue? get _controllerValue => _controller?.value;
 
   @override
   void initState() {
@@ -74,39 +81,52 @@ class _AdaptiveVideoPlayerState extends State<AdaptiveVideoPlayer> {
       unawaited(_setTrack(_initialTrackIndex(), manualSelection: _manuallySelected));
     }
 
-    if (widget.isActive != oldWidget.isActive && _controller != null) {
+    final controller = _controller;
+    if (widget.isActive != oldWidget.isActive && controller != null) {
       if (widget.isActive && widget.autoPlay) {
-        _controller!.play();
+        controller.play();
       } else if (!widget.isActive) {
-        _controller!.pause();
+        controller.pause();
       }
     }
 
-    if (widget.muted != oldWidget.muted && _controller != null) {
-      _controller!.setVolume(widget.muted ? 0 : 1);
+    if (widget.muted != oldWidget.muted && controller != null) {
+      controller.setVolume(widget.muted ? 0 : 1);
+    }
+
+    if (widget.loop != oldWidget.loop && controller != null) {
+      controller.setLooping(widget.loop);
     }
   }
 
   @override
   void dispose() {
     _infoTimer?.cancel();
-    _controller?.removeEventsListener(_handleEvent);
-    _controller?.dispose();
+    final controller = _controller;
+    controller?.removeListener(_handleControllerUpdate);
+    controller?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final controller = _controller;
-    final showPlaceholder = controller == null;
+    final value = _controllerValue;
+    final isReady = value?.isInitialized == true;
+    final showPlaceholder = !isReady;
 
     return Semantics(
       label: widget.semanticLabel,
       child: Stack(
         fit: StackFit.expand,
         children: [
-          if (controller != null)
-            BetterPlayer(controller)
+          if (isReady && controller != null)
+            _VideoTexture(
+              controller: controller,
+              aspectRatio: widget.aspectRatio,
+              showControls: widget.showControls,
+              onTogglePlay: _togglePlayback,
+            )
           else
             _buildPosterFallback(),
           if (showPlaceholder && widget.posterImageUrl == null)
@@ -144,7 +164,7 @@ class _AdaptiveVideoPlayerState extends State<AdaptiveVideoPlayer> {
               left: 12,
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.65),
+                  color: Colors.black.withValues(alpha: 0.65),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Padding(
@@ -162,6 +182,30 @@ class _AdaptiveVideoPlayerState extends State<AdaptiveVideoPlayer> {
         ],
       ),
     );
+  }
+
+  Future<void> _togglePlayback() async {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) {
+      return;
+    }
+    if (controller.value.isPlaying) {
+      await controller.pause();
+    } else {
+      await controller.play();
+    }
+  }
+
+  Duration _bufferedAhead(VideoPlayerValue value) {
+    for (final range in value.buffered) {
+      if (value.position >= range.start && value.position <= range.end) {
+        return range.end - value.position;
+      }
+      if (range.start > value.position) {
+        return range.end - value.position;
+      }
+    }
+    return Duration.zero;
   }
 
   List<VideoTrack> _normalizeTracks(List<VideoTrack> tracks) {
@@ -214,125 +258,158 @@ class _AdaptiveVideoPlayerState extends State<AdaptiveVideoPlayer> {
     }
 
     final track = _tracks[index];
+    if (kDebugMode) {
+      debugPrint(
+        'AdaptiveVideoPlayer: loading track ${track.label} (adaptive=${track.isAdaptive}) ${track.uri}',
+      );
+    }
     final oldController = _controller;
-    oldController?.removeEventsListener(_handleEvent);
+    oldController?.removeListener(_handleControllerUpdate);
+    oldController?.pause();
 
-    final configuration = _buildConfiguration(track);
-    final dataSource = _buildDataSource(track);
-    final controller = BetterPlayerController(
-      configuration,
-      betterPlayerDataSource: dataSource,
-    );
-    controller.addEventsListener(_handleEvent);
+    final requestId = ++_trackRequestId;
 
     setState(() {
-      _controller = controller;
+      _controller = null;
       _currentTrackIndex = index;
       _hasFatalError = false;
       _errorMessage = null;
       _manuallySelected = manualSelection;
+      _isBuffering = true;
     });
 
-    if (widget.muted) {
-      controller.setVolume(0);
+    try {
+      final controller = await _buildController(track);
+      controller.addListener(_handleControllerUpdate);
+      await controller.setLooping(widget.loop);
+      if (widget.muted) {
+        await controller.setVolume(0);
+      }
+
+      try {
+        await controller.initialize();
+      } catch (error, stackTrace) {
+        controller.removeListener(_handleControllerUpdate);
+        await controller.dispose();
+        if (kDebugMode) {
+          debugPrint('Failed to initialize video track ${track.uri}: $error');
+          debugPrintStack(stackTrace: stackTrace);
+        }
+        if (requestId == _trackRequestId) {
+          _handlePlaybackError('We couldn\'t load ${track.label}.');
+        }
+        return;
+      }
+
+      if (!mounted || requestId != _trackRequestId) {
+        controller.removeListener(_handleControllerUpdate);
+        await controller.dispose();
+        return;
+      }
+
+      if (!widget.muted) {
+        await controller.setVolume(1);
+      }
+
+      setState(() {
+        _controller = controller;
+        _isBuffering = controller.value.isBuffering;
+      });
+
+      if (widget.isActive && widget.autoPlay) {
+        unawaited(controller.play());
+      }
+    } catch (error, stackTrace) {
+      if (kDebugMode) {
+        debugPrint('Failed to prepare video track ${track.uri}: $error');
+        debugPrintStack(stackTrace: stackTrace);
+      }
+      if (requestId == _trackRequestId) {
+        _handlePlaybackError('We couldn\'t load ${track.label}.');
+      }
+    } finally {
+      await oldController?.dispose();
+    }
+  }
+
+  Future<VideoPlayerController> _buildController(VideoTrack track) async {
+    if (track.isFile) {
+      return VideoPlayerController.file(File(track.uri.toFilePath()));
     }
 
-    if (widget.isActive && widget.autoPlay) {
-      controller.play();
-    }
-
-    await oldController?.dispose();
-  }
-
-  BetterPlayerConfiguration _buildConfiguration(VideoTrack track) {
-    return BetterPlayerConfiguration(
-      autoPlay: widget.autoPlay && widget.isActive,
-      looping: widget.loop,
-      aspectRatio: widget.aspectRatio,
-      fit: BoxFit.cover,
-      autoDispose: true,
-      handleLifecycle: true,
-      controlsConfiguration: BetterPlayerControlsConfiguration(
-        showControls: widget.showControls,
-        showControlsOnInitialize: widget.showControls,
-        enableFullscreen: widget.showControls,
-        enableMute: widget.showControls,
-        enablePlaybackSpeed: false,
-        enableQualities: false,
-        enableAudioTracks: false,
-        enablePip: false,
-        enableSkips: false,
-        controlBarColor: Colors.black54,
-        iconsColor: Colors.white,
-        loadingColor: Colors.white,
-      ),
-      placeholderOnTop: true,
-      placeholder: widget.posterImageUrl != null
-          ? _PosterImage(imageProvider: _imageProvider(widget.posterImageUrl))
-          : null,
-    );
-  }
-
-  BetterPlayerDataSource _buildDataSource(VideoTrack track) {
-    final type = track.isNetwork
-        ? BetterPlayerDataSourceType.network
-        : BetterPlayerDataSourceType.file;
-    final source = track.isFile ? track.uri.toFilePath() : track.uri.toString();
-
-    return BetterPlayerDataSource(
-      type,
-      source,
-      cacheConfiguration: widget.cacheEnabled && track.isNetwork
-          ? BetterPlayerCacheConfiguration(
-              useCache: true,
-              maxCacheSize: 512 * 1024 * 1024,
-              maxCacheFileSize: 200 * 1024 * 1024,
-              preCacheSize: 6 * 1024 * 1024,
-              key: track.cacheKey ?? track.uri.toString(),
-            )
-          : null,
-      videoFormat: track.isAdaptive || track.uri.path.endsWith('.m3u8')
-          ? BetterPlayerVideoFormat.hls
-          : BetterPlayerVideoFormat.other,
-      useAsmsSubtitles: false,
-      useAsmsTracks: track.isAdaptive,
-      notificationConfiguration: const BetterPlayerNotificationConfiguration(
-        showNotification: false,
-      ),
-    );
-  }
-
-  void _handleEvent(BetterPlayerEvent event) {
-    switch (event.betterPlayerEventType) {
-      case BetterPlayerEventType.initialized:
-        if (widget.muted) {
-          _controller?.setVolume(0);
+    if (widget.cacheEnabled && !track.isAdaptive) {
+      final cacheKey = track.cacheKey ?? track.uri.toString();
+      try {
+        final cached = await _cacheManager.getFileFromCache(cacheKey);
+        if (cached != null && await cached.file.exists()) {
+          return VideoPlayerController.file(cached.file);
         }
-        setState(() => _isBuffering = false);
-        break;
-      case BetterPlayerEventType.bufferingStart:
-        setState(() => _isBuffering = true);
-        break;
-      case BetterPlayerEventType.bufferingEnd:
-      case BetterPlayerEventType.play:
-      case BetterPlayerEventType.pause:
-        if (_isBuffering) {
-          setState(() => _isBuffering = false);
+      } catch (error) {
+        if (kDebugMode) {
+          debugPrint('Cache lookup failed for ${track.uri}: $error');
         }
-        break;
-      case BetterPlayerEventType.exception:
-        _handlePlaybackError(
-          (event.parameters ?? const <String, Object?>{})['exception']
-                  ?.toString() ??
-              'Playback failed.',
+      }
+
+      try {
+        final fileInfo = await _cacheManager.downloadFile(
+          track.uri.toString(),
+          key: cacheKey,
+          force: false,
         );
-        break;
-      default:
-        break;
+        if (await fileInfo.file.exists()) {
+          return VideoPlayerController.file(fileInfo.file);
+        }
+      } catch (error) {
+        if (kDebugMode) {
+          debugPrint('Cache download failed for ${track.uri}: $error');
+        }
+      }
+    }
+
+    return VideoPlayerController.networkUrl(track.uri);
+  }
+
+  void _handleControllerUpdate() {
+    final controller = _controller;
+    if (controller == null) {
+      return;
+    }
+    final value = controller.value;
+
+    if (_isBuffering != value.isBuffering) {
+      setState(() => _isBuffering = value.isBuffering);
+    }
+
+    if (kDebugMode) {
+      final now = DateTime.now();
+      if (_lastDiagnosticsPrint == null ||
+          now.difference(_lastDiagnosticsPrint!) > const Duration(seconds: 2)) {
+        final bufferedAhead = _bufferedAhead(value);
+        final trackLabel = (_tracks.isNotEmpty &&
+                _currentTrackIndex >= 0 &&
+                _currentTrackIndex < _tracks.length)
+            ? _tracks[_currentTrackIndex].label
+            : 'n/a';
+        debugPrint(
+          'AdaptiveVideoPlayer diagnostics: track=$trackLabel '
+          'pos=${value.position.inMilliseconds}ms '
+          'buffered=${bufferedAhead.inMilliseconds}ms '
+          'playing=${value.isPlaying} buffering=${value.isBuffering}',
+        );
+        _lastDiagnosticsPrint = now;
+      }
+    }
+
+    if (value.hasError && !_hasFatalError) {
+      final description = value.errorDescription ?? 'Playback failed.';
+      _handlePlaybackError(description);
     }
   }
 
   void _handlePlaybackError(String message) {
+    if (kDebugMode) {
+      debugPrint('AdaptiveVideoPlayer error: $message');
+    }
     widget.onError?.call(message);
     if (_currentTrackIndex < _tracks.length - 1) {
       final nextIndex = _currentTrackIndex + 1;
@@ -360,7 +437,7 @@ class _AdaptiveVideoPlayerState extends State<AdaptiveVideoPlayer> {
   Widget _buildErrorOverlay(BuildContext context) {
     final theme = Theme.of(context);
     return Container(
-      color: Colors.black.withOpacity(0.75),
+      color: Colors.black.withValues(alpha: 0.75),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 320),
@@ -433,22 +510,83 @@ class _AdaptiveVideoPlayerState extends State<AdaptiveVideoPlayer> {
   }
 }
 
-class _PosterImage extends StatelessWidget {
-  const _PosterImage({required this.imageProvider});
+class _VideoTexture extends StatelessWidget {
+  const _VideoTexture({
+    required this.controller,
+    required this.aspectRatio,
+    required this.showControls,
+    required this.onTogglePlay,
+  });
 
-  final ImageProvider<Object>? imageProvider;
+  final VideoPlayerController controller;
+  final double? aspectRatio;
+  final bool showControls;
+  final Future<void> Function() onTogglePlay;
 
   @override
   Widget build(BuildContext context) {
-    if (imageProvider == null) {
-      return const SizedBox.shrink();
+    final videoAspectRatio = controller.value.aspectRatio == 0
+        ? (aspectRatio ?? 16 / 9)
+        : (aspectRatio ?? controller.value.aspectRatio);
+
+    final size = controller.value.size;
+    final width = size.width == 0 ? 1.0 : size.width;
+    final height = size.height == 0 ? 1.0 : size.height;
+
+    Widget child = FittedBox(
+      fit: BoxFit.cover,
+      clipBehavior: Clip.hardEdge,
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: VideoPlayer(controller),
+      ),
+    );
+
+    if (videoAspectRatio.isFinite && videoAspectRatio > 0) {
+      child = AspectRatio(aspectRatio: videoAspectRatio, child: child);
     }
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        image: DecorationImage(
-          image: imageProvider!,
-          fit: BoxFit.cover,
-        ),
+
+    if (!showControls) {
+      return child;
+    }
+
+    return GestureDetector(
+      onTap: onTogglePlay,
+      behavior: HitTestBehavior.opaque,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          child,
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: Container(
+              height: 48,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  colors: [
+                    Colors.black.withValues(alpha: 0.55),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.start,
+                children: [
+                  const SizedBox(width: 8),
+                  Icon(
+                    controller.value.isPlaying
+                        ? Icons.pause_circle_filled
+                        : Icons.play_circle_fill,
+                    color: Colors.white,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -470,13 +608,13 @@ class _QualityButton extends StatelessWidget {
     final theme = Theme.of(context);
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.55),
+        color: Colors.black.withValues(alpha: 0.55),
         borderRadius: BorderRadius.circular(24),
       ),
       child: Theme(
         data: theme.copyWith(
           popupMenuTheme: theme.popupMenuTheme.copyWith(
-            color: Colors.black.withOpacity(0.88),
+            color: Colors.black.withValues(alpha: 0.88),
             textStyle: const TextStyle(color: Colors.white),
           ),
         ),

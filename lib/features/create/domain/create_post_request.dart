@@ -13,6 +13,12 @@ class CreatePostRequest extends Equatable {
     this.coverFramePosition,
     this.overlays = const <FeedTextOverlay>[],
     this.compositionTransform,
+    this.location,
+    this.mentions = const <String>[],
+    this.visibility = 'public',
+    this.allowComments = true,
+    this.allowSharing = true,
+    this.externalLink,
   });
 
   final String mediaPath;
@@ -24,6 +30,12 @@ class CreatePostRequest extends Equatable {
   final Duration? coverFramePosition;
   final List<FeedTextOverlay> overlays;
   final List<double>? compositionTransform;
+  final String? location;
+  final List<String> mentions;
+  final String visibility;
+  final bool allowComments;
+  final bool allowSharing;
+  final String? externalLink;
 
   bool get isVideo => mediaType == FeedMediaType.video;
 
@@ -38,5 +50,11 @@ class CreatePostRequest extends Equatable {
         coverFramePosition?.inMilliseconds,
         overlays,
         compositionTransform,
+        location,
+        mentions,
+        visibility,
+        allowComments,
+        allowSharing,
+        externalLink,
       ];
 }

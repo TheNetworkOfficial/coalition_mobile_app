@@ -168,6 +168,7 @@ class PublishPostScreen extends ConsumerStatefulWidget {
     this.composition,
     this.initialOverlays,
     this.overrideMediaPath,
+    this.previewImagePath,
     super.key,
   });
 
@@ -177,6 +178,7 @@ class PublishPostScreen extends ConsumerStatefulWidget {
   final List<double>? composition;
   final List<EditableOverlay>? initialOverlays;
   final String? overrideMediaPath;
+  final String? previewImagePath;
   // controller removed - playback not required on publish screen
 
   @override
@@ -219,9 +221,28 @@ class _PublishPostScreenState extends ConsumerState<PublishPostScreen> {
                       // should not draw the editable overlay layer on top again
                       // (this caused the duplicated text). Otherwise render the
                       // transform + overlay preview as before.
-                      Image.file(
-                          File(widget.overrideMediaPath ?? widget.mediaPath),
-                          fit: BoxFit.cover),
+                      Builder(builder: (context) {
+                        final previewPath = widget.previewImagePath ??
+                            widget.overrideMediaPath ??
+                            widget.mediaPath;
+                        if (widget.mediaType == FeedMediaType.video &&
+                            widget.previewImagePath == null) {
+                          return const ColoredBox(
+                            color: Colors.black54,
+                            child: Center(
+                              child: Icon(
+                                Icons.videocam,
+                                color: Colors.white54,
+                                size: 48,
+                              ),
+                            ),
+                          );
+                        }
+                        return Image.file(
+                          File(previewPath),
+                          fit: BoxFit.cover,
+                        );
+                      }),
                       if (widget.overrideMediaPath == null &&
                           (widget.composition != null ||
                               (widget.initialOverlays?.isNotEmpty ?? false)))
@@ -320,7 +341,7 @@ class _PublishPostScreenState extends ConsumerState<PublishPostScreen> {
                       description: _descriptionController.text.trim(),
                       tags: _selectedTags.toList(),
                       aspectRatio: widget.aspectRatio,
-                      coverImagePath: null,
+                      coverImagePath: widget.previewImagePath,
                       coverFramePosition: null,
                       overlays: (widget.initialOverlays
                               ?.map((e) => FeedTextOverlay(

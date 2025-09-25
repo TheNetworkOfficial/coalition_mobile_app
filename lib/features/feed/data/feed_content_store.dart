@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 // state_notifier types are provided transitively through flutter_riverpod/legacy
 
+import '../../../core/video/video_track.dart';
 import '../domain/feed_content.dart';
 import 'feed_sample_content.dart';
 
@@ -24,6 +25,34 @@ class FeedContentStore extends StateNotifier<List<FeedContent>> {
     final updated = [
       for (final item in state)
         if (item.id == content.id) content else item,
+    ];
+    state = updated;
+  }
+
+  void updateProcessingStatus(
+    String contentId, {
+    required FeedMediaProcessingStatus status,
+    String? mediaUrl,
+    String? thumbnailUrl,
+    VideoTrack? adaptiveStream,
+    List<VideoTrack>? fallbackStreams,
+    String? processingJobId,
+    String? processingError,
+  }) {
+    final updated = [
+      for (final item in state)
+        if (item.id == contentId)
+          item.copyWith(
+            mediaUrl: mediaUrl ?? item.mediaUrl,
+            thumbnailUrl: thumbnailUrl ?? item.thumbnailUrl,
+            adaptiveStream: adaptiveStream ?? item.adaptiveStream,
+            fallbackStreams: fallbackStreams ?? item.fallbackStreams,
+            processingStatus: status,
+            processingJobId: processingJobId ?? item.processingJobId,
+            processingError: processingError ?? item.processingError,
+          )
+        else
+          item,
     ];
     state = updated;
   }

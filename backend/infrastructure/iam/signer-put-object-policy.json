@@ -1,0 +1,11 @@
+{
+  "Version":"2012-10-17",
+  "Statement":[
+    {
+      "Sid":"AllowPutObjectAllKeys",
+      "Effect":"Allow",
+      "Action":[ "s3:PutObject" ],
+      "Resource":"arn:aws:s3:::lux-video-dev-262a61d7/*"
+    }
+  ]
+}

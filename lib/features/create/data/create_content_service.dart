@@ -1,6 +1,6 @@
+import 'dart:async';
 import 'dart:io';
 
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
@@ -11,15 +11,28 @@ import '../../auth/domain/app_user.dart';
 import '../../events/domain/event.dart';
 import '../../feed/data/feed_content_store.dart';
 import '../../feed/domain/feed_content.dart';
+import '../../../core/config/backend_config_loader.dart';
+import '../../../core/config/backend_config_provider.dart';
 import '../../../core/services/in_memory_coalition_repository.dart';
-import '../../../core/video/video_transcode_service.dart';
 import '../../../core/video/video_track.dart';
+import '../../../core/video/upload/video_upload_repository.dart';
 import '../domain/create_event_request.dart';
 import '../domain/create_post_request.dart';
 
 final createContentServiceProvider = Provider<CreateContentService>((ref) {
   return CreateContentService(ref);
 });
+
+enum CreateUploadStage { preparing, uploading, processing, completed }
+
+class ContentUploadException implements Exception {
+  const ContentUploadException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'ContentUploadException: $message';
+}
 
 class CreateContentService {
   CreateContentService(this._ref);
@@ -30,6 +43,7 @@ class CreateContentService {
   Future<String> createPost(
     CreatePostRequest request, {
     required AppUser author,
+    ValueChanged<CreateUploadStage>? onProgress,
   }) async {
     final contentId = _uuid.v4();
     final now = DateTime.now();
@@ -37,47 +51,88 @@ class CreateContentService {
         ? FeedSourceType.candidate
         : FeedSourceType.creator;
 
-    var processedMediaPath = request.mediaPath;
-    VideoTrack? adaptiveStream;
-    List<VideoTrack> fallbackStreams = const <VideoTrack>[];
+    FeedContent content;
 
     if (request.isVideo) {
-      try {
-        final processed = await _prepareVideoForPublishing(request.mediaPath);
-        processedMediaPath = _stringFromUri(processed.primaryTrack.uri);
-        adaptiveStream = processed.adaptiveTrack;
-        fallbackStreams = processed.fallbackTracks;
-      } on VideoTranscodeException catch (error, stackTrace) {
-        debugPrint('Video transcode failed: $error\n$stackTrace');
+      final uploadRepository = _ref.read(videoUploadRepositoryProvider);
+      final backendConfig = _ref.read(backendConfigProvider);
+      final videoFile = File(request.mediaPath);
+      if (!videoFile.existsSync()) {
+        throw const ContentUploadException('Selected video could not be located.');
       }
+
+      onProgress?.call(CreateUploadStage.uploading);
+      final job = await uploadRepository.uploadVideo(
+        video: videoFile,
+        cover: request.coverImagePath != null
+            ? File(request.coverImagePath!)
+            : null,
+        request: VideoUploadRequest(
+          description: request.description,
+          hashtags: request.tags,
+          mentions: request.mentions,
+          location: request.location ?? '',
+          visibility: request.visibility,
+          allowComments: request.allowComments,
+          allowSharing: request.allowSharing,
+        ),
+      );
+
+      onProgress?.call(CreateUploadStage.processing);
+
+      final coverUrl = _resolveMediaUrl(backendConfig, job.coverUrl) ??
+          request.coverImagePath;
+
+      content = FeedContent(
+        id: contentId,
+        mediaType: FeedMediaType.video,
+        mediaUrl: request.mediaPath,
+        thumbnailUrl: coverUrl,
+        aspectRatio: request.aspectRatio,
+        posterId: author.id,
+        posterName: author.displayName,
+        posterAvatarUrl: author.profileImagePath,
+        description: request.description,
+        sourceType: sourceType,
+        publishedAt: now,
+        tags: request.tags.toSet(),
+        interactionStats: const FeedInteractionStats(),
+        overlays: request.overlays,
+        compositionTransform: request.compositionTransform,
+        processingStatus: FeedMediaProcessingStatus.processing,
+        processingJobId: job.id,
+      );
+
+      _ref.read(feedContentStoreProvider.notifier).addContent(content);
+      unawaited(_watchUploadJob(
+        contentId: contentId,
+        jobId: job.id,
+      ));
+    } else {
+      onProgress?.call(CreateUploadStage.uploading);
+      final thumbnail = request.coverImagePath ?? request.mediaPath;
+      content = FeedContent(
+        id: contentId,
+        mediaType: FeedMediaType.image,
+        mediaUrl: request.mediaPath,
+        thumbnailUrl: thumbnail,
+        aspectRatio: request.aspectRatio,
+        posterId: author.id,
+        posterName: author.displayName,
+        posterAvatarUrl: author.profileImagePath,
+        description: request.description,
+        sourceType: sourceType,
+        publishedAt: now,
+        tags: request.tags.toSet(),
+        interactionStats: const FeedInteractionStats(),
+        overlays: request.overlays,
+        compositionTransform: request.compositionTransform,
+      );
+      _ref.read(feedContentStoreProvider.notifier).addContent(content);
     }
 
-    final thumbnail = request.coverImagePath ??
-        (request.mediaType == FeedMediaType.image
-            ? request.mediaPath
-            : null);
+    onProgress?.call(CreateUploadStage.completed);
 
-    final content = FeedContent(
-      id: contentId,
-      mediaType: request.mediaType,
-      mediaUrl: processedMediaPath,
-      thumbnailUrl: thumbnail,
-      aspectRatio: request.aspectRatio,
-      posterId: author.id,
-      posterName: author.displayName,
-      posterAvatarUrl: author.profileImagePath,
-      description: request.description,
-      sourceType: sourceType,
-      publishedAt: now,
-      tags: request.tags.toSet(),
-      interactionStats: const FeedInteractionStats(),
-      overlays: request.overlays,
-      compositionTransform: request.compositionTransform,
-      adaptiveStream: adaptiveStream,
-      fallbackStreams: fallbackStreams,
-    );
-
-    _ref.read(feedContentStoreProvider.notifier).addContent(content);
     await _ref
         .read(authControllerProvider.notifier)
         .registerCreatedContent(contentId);
@@ -92,22 +147,53 @@ class CreateContentService {
     final repository = _ref.read(coalitionRepositoryProvider);
     final eventId = _uuid.v4();
 
-    final coverImage = request.coverImagePath ??
+    String? coverImage = request.coverImagePath ??
         (request.mediaType == FeedMediaType.image ? request.mediaPath : null);
 
     String? processedMediaPath = request.mediaPath;
     VideoTrack? adaptiveStream;
     List<VideoTrack> fallbackStreams = const <VideoTrack>[];
 
-    if (request.mediaType == FeedMediaType.video &&
-        request.mediaPath != null) {
-      try {
-        final processed = await _prepareVideoForPublishing(request.mediaPath!);
-        processedMediaPath = _stringFromUri(processed.primaryTrack.uri);
-        adaptiveStream = processed.adaptiveTrack;
-        fallbackStreams = processed.fallbackTracks;
-      } on VideoTranscodeException catch (error, stackTrace) {
-        debugPrint('Event video transcode failed: $error\n$stackTrace');
+    if (request.mediaType == FeedMediaType.video && request.mediaPath != null) {
+      final uploadRepository = _ref.read(videoUploadRepositoryProvider);
+      final backendConfig = _ref.read(backendConfigProvider);
+      final job = await uploadRepository.uploadVideo(
+        video: File(request.mediaPath!),
+        request: VideoUploadRequest(
+          description: request.description,
+          hashtags: request.tags,
+          mentions: const <String>[],
+          location: request.location,
+          visibility: 'public',
+          allowComments: true,
+          allowSharing: true,
+        ),
+      );
+
+      final result = await uploadRepository
+          .pollJob(job.id)
+          .lastWhere((job) => job.isComplete);
+
+      if (result.isReady) {
+        final playlistUrl = _resolveMediaUrl(backendConfig, result.playlistUrl);
+        final coverUrl = _resolveMediaUrl(backendConfig, result.coverUrl);
+        processedMediaPath = playlistUrl;
+        adaptiveStream = playlistUrl != null
+            ? VideoTrack(
+                uri: Uri.parse(playlistUrl),
+                label: 'Auto',
+                isAdaptive: true,
+                cacheKey: 'event-${job.id}-master',
+              )
+            : null;
+        fallbackStreams = adaptiveStream != null ? [adaptiveStream] : const [];
+        if (coverUrl != null) {
+          coverImage = coverUrl;
+        }
+      } else {
+        throw ContentUploadException(
+          'Event video processing failed: ${result.error ?? 'unknown error'}',
+        );
       }
     }
 
@@ -169,26 +255,59 @@ class CreateContentService {
     }
   }
 
-  Future<VideoProcessingBundle> _prepareVideoForPublishing(
-    String mediaPath,
-  ) async {
-    final connectivity = await Connectivity().checkConnectivity();
-    final preferCellular = connectivity == ConnectivityResult.mobile;
-    return _ref
-        .read(videoTranscodeServiceProvider)
-        .prepareForUpload(
-          sourcePath: mediaPath,
-          preferCellularProfile: preferCellular,
-        );
+  Future<void> _watchUploadJob({
+    required String contentId,
+    required String jobId,
+  }) async {
+    final uploadRepository = _ref.read(videoUploadRepositoryProvider);
+    final backendConfig = _ref.read(backendConfigProvider);
+    await for (final job in uploadRepository.pollJob(jobId)) {
+      final coverUrl = _resolveMediaUrl(backendConfig, job.coverUrl);
+      if (job.status == VideoUploadJobStatus.processing) {
+        _ref.read(feedContentStoreProvider.notifier).updateProcessingStatus(
+              contentId,
+              status: FeedMediaProcessingStatus.processing,
+              thumbnailUrl: coverUrl,
+              processingJobId: job.id,
+            );
+      } else if (job.status == VideoUploadJobStatus.ready) {
+        final playlistUrl = _resolveMediaUrl(backendConfig, job.playlistUrl);
+        VideoTrack? adaptive;
+        if (playlistUrl != null) {
+          adaptive = VideoTrack(
+            uri: Uri.parse(playlistUrl),
+            label: 'Auto',
+            isAdaptive: true,
+            cacheKey: 'feed-${job.id}-master',
+          );
+        }
+        _ref.read(feedContentStoreProvider.notifier).updateProcessingStatus(
+              contentId,
+              status: FeedMediaProcessingStatus.ready,
+              mediaUrl: playlistUrl,
+              thumbnailUrl: coverUrl,
+              adaptiveStream: adaptive,
+              fallbackStreams: adaptive != null ? [adaptive] : const [],
+              processingJobId: job.id,
+              processingError: null,
+            );
+      } else if (job.status == VideoUploadJobStatus.failed) {
+        _ref.read(feedContentStoreProvider.notifier).updateProcessingStatus(
+              contentId,
+              status: FeedMediaProcessingStatus.failed,
+              processingJobId: job.id,
+              processingError: job.error,
+            );
+      }
+    }
   }
 
-  String _stringFromUri(Uri uri) {
-    if (uri.scheme == 'file') {
-      return uri.toFilePath();
+  String? _resolveMediaUrl(BackendConfig config, String? path) {
+    if (path == null || path.isEmpty) {
+      return null;
     }
-    if (uri.scheme.isEmpty) {
-      return uri.toString();
-    }
-    return uri.toString();
+    final origin = config.baseUri.replace(path: '/');
+    final normalized = path.startsWith('/') ? path.substring(1) : path;
+    return origin.resolve(normalized).toString();
   }
 }

@@ -155,7 +155,45 @@ Consider adding `integration_test/` suites once APIs are wired up.
 
 ---
 
-## 6. Troubleshooting
+## 6. Video Delivery Pipeline
+
+Long-form uploads follow the same flow whether you test locally or deploy to AWS:
+
+1. **Client upload.** The Flutter app posts the raw capture (plus optional cover art) to the backend defined in `assets/config/backend_config.json`.
+2. **Server-side processing.** The backend (Express POC locally, Lambda/MediaConvert in AWS) writes the source file to staging storage, runs ffmpeg to create an HLS package + poster frame, and serves them from a predictable prefix.
+3. **Job polling.** Flutter receives a `jobId`, shows a TikTok-style "Processing" state in the feed, and polls `GET /api/videos/:jobId` until renditions are ready.
+4. **Adaptive playback.** When ready, the feed swaps in the CDN/HTTP(S) manifest and renders it with `AdaptiveVideoPlayer`, falling back to MP4 or the original file only if processing fails.
+
+### 6.1 App configuration
+
+Two JSON assets control runtime wiring:
+
+```bash
+cp assets/config/backend_config.json assets/config/backend_config.local.json # example backup
+cp assets/config/cdn_config.json assets/config/cdn_config.local.json        # optional override
+```
+
+- `backend_config.json` – `{"baseUrl": "http://10.0.2.2:3001/api/"}` targets the local Express server. Point this at your API Gateway stage when you move to AWS.
+- `cdn_config.json` – Optional signer/CDN hints for direct S3 uploads. Leave it blank during local testing; populate it with the AWS signer endpoint/public base URL when you transition to S3.
+
+### 6.2 Backend contract checklist
+
+Regardless of implementation, the `/videos` resource should:
+
+- Accept `multipart/form-data` with `video` (required) and `cover` (optional) parts plus metadata fields (`description`, `hashtags`, `visibility`, etc.).
+- Return `{ "jobId": "uuid", "status": "processing" }` immediately, then expose the rendered assets and status via `GET /videos/:jobId`.
+- Publish finished assets at stable URLs (e.g., `/media/<jobId>/master.m3u8`) so the client can resolve them against your CDN domain.
+- Surface failure reasons so the app can show a friendly error and let users retry.
+
+### 6.3 Player expectations
+
+- The feed prefers the adaptive manifest first; manual quality selection is available when multiple renditions exist.
+- Placeholder states (`processing`, `failed`) render until the manifest is reachable, so users never hit a blank player.
+- Legacy posts without remote URLs still play from local paths, but plan on re-publishing them once the CDN is live.
+
+---
+
+## 7. Troubleshooting
 
 | Symptom | Likely Fix |
 | --- | --- |

@@ -4,10 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../auth/data/auth_controller.dart';
 import '../data/create_content_service.dart';
 import '../domain/create_post_request.dart';
-import 'media_composer_screen.dart';
-import 'widgets/media_composer_support.dart';
+import '../../feed/domain/feed_content.dart';
 import 'media_picker_screen.dart';
-import 'publish_post_screen.dart';
+import 'post_details_screen.dart';
+import 'video_review_screen.dart';
 
 /// A thin orchestration screen that immediately opens the media picker.
 ///
@@ -28,10 +28,27 @@ class CreatePostScreen extends ConsumerStatefulWidget {
 class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   bool _pickerPresented = false;
   bool _submitting = false;
+  CreateUploadStage? _progressStage;
+  String? _progressMessage;
 
   @override
   void initState() {
     super.initState();
+  }
+
+  String _progressLabelForStage(CreateUploadStage? stage) {
+    switch (stage) {
+      case CreateUploadStage.preparing:
+        return 'Preparing media…';
+      case CreateUploadStage.uploading:
+        return 'Uploading…';
+      case CreateUploadStage.processing:
+        return 'Processing video…';
+      case CreateUploadStage.completed:
+        return 'Finishing up…';
+      case null:
+        return 'Uploading…';
+    }
   }
 
   @override
@@ -61,56 +78,98 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
           return;
         }
 
-        // Open composer
-        final compositionResult = await navigator.push<MediaCompositionResult>(
-          MaterialPageRoute(
-            fullscreenDialog: true,
-            builder: (ctx) => MediaComposerScreen(
-              mediaPath: pickerResult.filePath,
-              mediaType: pickerResult.mediaType,
-              initialAspectRatio: pickerResult.aspectRatio,
-              initialTransformValues: null,
-              initialOverlays: const <EditableOverlay>[],
+        CreatePostRequest? request;
+
+        if (pickerResult.mediaType == FeedMediaType.video) {
+          final reviewResult = await navigator.push<VideoReviewResult>(
+            MaterialPageRoute(
+              builder: (ctx) => VideoReviewScreen(
+                mediaPath: pickerResult.filePath,
+                aspectRatio: pickerResult.aspectRatio,
+              ),
             ),
-          ),
-        );
+          );
+
+          if (!mounted) return;
+          if (reviewResult == null) {
+            navigator.maybePop();
+            return;
+          }
+
+          request = await navigator.push<CreatePostRequest>(
+            MaterialPageRoute(
+              builder: (ctx) => PostDetailsScreen(
+                mediaPath: reviewResult.mediaPath,
+                mediaType: pickerResult.mediaType,
+                aspectRatio: reviewResult.aspectRatio,
+                videoDuration: reviewResult.duration,
+              ),
+            ),
+          );
+        } else {
+          request = await navigator.push<CreatePostRequest>(
+            MaterialPageRoute(
+              builder: (ctx) => PostDetailsScreen(
+                mediaPath: pickerResult.filePath,
+                mediaType: pickerResult.mediaType,
+                aspectRatio: pickerResult.aspectRatio,
+                initialCoverPath: pickerResult.filePath,
+              ),
+            ),
+          );
+        }
 
         if (!mounted) return;
-        if (compositionResult == null) return;
-
-        final request = await navigator.push<CreatePostRequest>(
-          MaterialPageRoute(
-            builder: (ctx) => PublishPostScreen(
-              mediaPath: pickerResult.filePath,
-              mediaType: pickerResult.mediaType,
-              aspectRatio: compositionResult.aspectRatio,
-              composition: compositionResult.transformValues,
-              initialOverlays: compositionResult.overlays,
-              overrideMediaPath: compositionResult.bakedFilePath,
-            ),
-          ),
-        );
-
-        if (!mounted) return;
-        if (request == null) return;
+        if (request == null) {
+          navigator.maybePop();
+          return;
+        }
 
         // Submit the request
-        setState(() => _submitting = true);
+        setState(() {
+          _submitting = true;
+          _progressStage = CreateUploadStage.preparing;
+          _progressMessage = _progressLabelForStage(_progressStage);
+        });
         try {
-          final newContentId = await ref
-              .read(createContentServiceProvider)
-              .createPost(request, author: user);
+          final newContentId =
+              await ref.read(createContentServiceProvider).createPost(
+            request,
+            author: user,
+            onProgress: (stage) {
+              if (!mounted) return;
+              setState(() {
+                _progressStage = stage;
+                _progressMessage = _progressLabelForStage(stage);
+              });
+            },
+          );
           if (!mounted) return;
           navigator.pop(newContentId);
           messenger.showSnackBar(
-            const SnackBar(content: Text('Post published to the feed.')),
+            const SnackBar(
+              content: Text(
+                'Post published! We\'ll finish processing your video shortly.',
+              ),
+            ),
+          );
+        } on ContentUploadException catch (error) {
+          if (!mounted) return;
+          messenger.showSnackBar(
+            SnackBar(content: Text(error.message)),
           );
         } catch (error) {
           if (!mounted) return;
           messenger.showSnackBar(
               const SnackBar(content: Text('Failed to publish.')));
         } finally {
-          if (mounted) setState(() => _submitting = false);
+          if (mounted) {
+            setState(() {
+              _submitting = false;
+              _progressStage = null;
+              _progressMessage = null;
+            });
+          }
         }
       });
     }
@@ -120,7 +179,8 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         title: const Text('Create post'),
         leading: IconButton(
           icon: const Icon(Icons.close),
-          onPressed: () => Navigator.of(context).maybePop(),
+          onPressed:
+              _submitting ? null : () => Navigator.of(context).maybePop(),
         ),
         actions: [
           if (_submitting)
@@ -134,8 +194,65 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
             ),
         ],
       ),
-      body: const SafeArea(
-        child: Center(child: SizedBox.shrink()),
+      body: Stack(
+        children: [
+          const SafeArea(
+            child: Center(child: SizedBox.shrink()),
+          ),
+          if (_submitting)
+            _ProgressOverlay(
+              message:
+                  _progressMessage ?? _progressLabelForStage(_progressStage),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProgressOverlay extends StatelessWidget {
+  const _ProgressOverlay({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return AbsorbPointer(
+      absorbing: true,
+      child: Container(
+        color: Colors.black54,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 260),
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 18,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(
+                      height: 36,
+                      width: 36,
+                      child: CircularProgressIndicator(),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      message,
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodyMedium
+                          ?.copyWith(color: Colors.black87),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
