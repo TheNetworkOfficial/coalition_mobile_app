@@ -1,18 +1,19 @@
 # Video Upload Backend
 
-This directory houses the source-of-truth for the AWS video upload pipeline that powers the mobile application. The backend receives upload signing requests, returns pre-signed S3 URLs, and serves the resulting media via CloudFront.
+This directory houses the source-of-truth for the AWS video upload pipeline that powers the mobile application. The backend issues upload sessions, hands out presigned S3 URLs, and swaps the feed over to CloudFront-hosted renditions once MediaConvert finishes.
 
 ## Architecture
 - **Amazon S3** (`lux-video-dev-262a61d7` – region `us-west-2`)
   - Objects live under the `videos/` prefix and automatically expire after 30 days.
   - CORS allows `GET`, `HEAD`, `PUT` from any origin and exposes the `ETag` header.
-- **AWS Lambda** (`lux-sign-uploads`, Node.js 20)
-  - Returns pre-signed PUT URLs for each upload path.
-  - Environment variables: `BUCKET`, `PREFIX`, `PUBLIC_BASE_URL`.
-  - Scoped execution role (`lux-sign-uploads-role`) permits `s3:PutObject` on the bucket only.
+- **AWS Lambda** (`lux-video-sessions`, Node.js 20)
+  - `POST /videos/sessions` creates an upload session, returning presigned PUT URLs and a `jobId`.
+  - `POST /videos/sessions/{sessionId}/complete` enqueues the MediaConvert/ECS workflow.
+  - Environment variables: `BUCKET`, `PREFIX`, `PUBLIC_BASE_URL`, `MEDIACONVERT_ROLE`.
+  - Scoped execution role (`lux-video-sessions-role`) permits `s3:PutObject` plus the ability to start MediaConvert jobs.
 - **Amazon API Gateway** (`lux-video-api` HTTP API)
-  - Single `POST /` route integrated with the Lambda function.
-  - CORS allows `POST`/`OPTIONS` with `content-type` and `authorization` headers.
+  - Routes `POST /videos/sessions` and `POST /videos/sessions/{sessionId}/complete` to the Lambda above and proxies `GET /videos/{jobId}` to your job store.
+  - CORS allows `POST`/`GET`/`OPTIONS` with `content-type` and `authorization` headers.
   - HTTP APIs do **not** support API keys, so plan on securing the endpoint with JWT/OAuth authorizers if authentication is required.
 - **Amazon CloudFront** (`d21wy4swosisq5.cloudfront.net`)
   - Origin Access Control to S3, custom cache policies for manifests and segments, and a response headers policy that injects CORS/ETag headers.
@@ -37,8 +38,8 @@ This directory houses the source-of-truth for the AWS video upload pipeline that
    - Update the API Gateway integration if the Lambda ARN changes.
    - Apply the CloudFront cache policy IDs and distribution configuration (`distribution/final-config.json`).
 3. **Verify**
-   - Use the sample payload in `reference/api-responses/signer-success.json` to request pre-signed URLs.
-   - Upload placeholder assets (see `reference/samples/`) and confirm playback via CloudFront.
+   - Use the sample payload in `reference/api-responses/session-success.json` to request presigned URLs.
+   - Upload placeholder assets (see `reference/samples/`) and confirm playback via CloudFront once MediaConvert completes.
 
 ## Local Proof of Concept Server
 
@@ -58,10 +59,11 @@ Requirements:
 
 How it works:
 
-1. The client posts raw videos to `POST /api/videos`.
-2. The server stores the upload, runs ffmpeg/ffprobe to create MP4 renditions plus an HLS package, and serves them from `/media/<jobId>/`.
-3. Job status is tracked in-memory and exposed via `GET /api/videos/:jobId`.
-4. Flutter polls this endpoint until the job is `ready`, then switches playback to the served manifest.
+1. The client calls `POST /api/videos/sessions` to obtain presigned upload URLs.
+2. Raw captures (and optional covers) are uploaded directly to S3 via the provided presigned URLs.
+3. The client hits `POST /api/videos/sessions/:sessionId/complete`; the server stores the job metadata, runs ffmpeg/ffprobe to mirror the cloud workflow, and serves renditions from `/media/<jobId>/`.
+4. Job status is tracked in-memory and exposed via `GET /api/videos/:jobId`.
+5. Flutter polls this endpoint until the job is `ready`, then switches playback to the served manifest.
 
 This proof-of-concept mirrors the eventual AWS pipeline (Lambda + S3 + MediaConvert) but avoids cloud round-trips while you iterate on the UX.
 
@@ -77,7 +79,7 @@ This proof-of-concept mirrors the eventual AWS pipeline (Lambda + S3 + MediaConv
 - If users re-upload with the same `jobId`, issue a CloudFront invalidation for the affected prefix to flush stale manifests/segments.
 
 ## Flutter Integration Touchpoints
-- `assets/config/cdn_config.json` defines the signer endpoint and CDN base URL consumed by the app.
-- `lib/services/video_uploader.dart` and `lib/core/video/cdn/video_cdn_service.dart` call the API Gateway endpoint and upload media using the pre-signed URLs.
+- `assets/config/backend_config.json` defines the REST base URL consumed by the app.
+- `lib/core/video/upload/video_upload_repository.dart` orchestrates session creation, S3 uploads, job finalization, and polling.
 
 Keep environment secrets (AWS credentials, auth tokens) outside of version control. The JSON files here are sanitized outputs intended as documentation/inputs for future infrastructure-as-code automation.

@@ -43,7 +43,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       case CreateUploadStage.uploading:
         return 'Uploading…';
       case CreateUploadStage.processing:
-        return 'Processing video…';
+        return 'Processing in background… You can keep browsing.';
       case CreateUploadStage.completed:
         return 'Finishing up…';
       case null:

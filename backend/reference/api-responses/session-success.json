@@ -1,0 +1,22 @@
+{
+  "sessionId": "sess-123456",
+  "jobId": "job-123456",
+  "uploads": [
+    {
+      "type": "video",
+      "putUrl": "https://lux-video-dev.s3.us-west-2.amazonaws.com/videos/job-123456/source.mp4?signature",
+      "contentType": "video/mp4",
+      "objectKey": "videos/job-123456/source.mp4",
+      "headers": {
+        "x-amz-acl": "bucket-owner-full-control"
+      }
+    },
+    {
+      "type": "cover",
+      "putUrl": "https://lux-video-dev.s3.us-west-2.amazonaws.com/videos/job-123456/cover.jpg?signature",
+      "contentType": "image/jpeg",
+      "objectKey": "videos/job-123456/cover.jpg",
+      "headers": {}
+    }
+  ]
+}
