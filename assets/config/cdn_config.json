@@ -1,6 +1,0 @@
-{
-  "uploadEndpoint": "https://ocon6vm2d9.execute-api.us-west-2.amazonaws.com",
-  "publicBaseUrl": "https://d21wy4swosisq5.cloudfront.net",
-  "authToken": "dev-token-123",
-  "storagePrefix": "videos"
-}

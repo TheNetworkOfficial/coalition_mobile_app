@@ -19,42 +19,47 @@ final videoUploadRepositoryProvider = Provider<VideoUploadRepository>((ref) {
 });
 
 class VideoUploadRepository {
-  VideoUploadRepository(
-      {required http.Client client, required BackendConfig config})
+  VideoUploadRepository({required http.Client client, required BackendConfig config})
       : _client = client,
         _config = config;
 
   final http.Client _client;
   final BackendConfig _config;
 
-  Uri get _videosUri => _ensureTrailingSlash(_config.baseUri).resolve('videos');
+  Uri get _videosUri => _ensureTrailingSlash(_config.baseUri).resolve('videos/');
 
   Future<VideoUploadJob> uploadVideo({
     required File video,
     File? cover,
     required VideoUploadRequest request,
   }) async {
-    final uri = _videosUri;
-    final multipart = http.MultipartRequest('POST', uri);
+    final includeCover = cover != null && await cover.exists();
+    final session = await _createSession(
+      request: request,
+      includeCover: includeCover,
+    );
 
-    multipart.fields.addAll(request.toFields());
-    multipart.files.add(await http.MultipartFile.fromPath('video', video.path));
-    if (cover != null && await cover.exists()) {
-      multipart.files
-          .add(await http.MultipartFile.fromPath('cover', cover.path));
+    final uploaded = <VideoUploadAssetType, VideoUploadTarget>{};
+
+    final videoTarget = session.targetFor(VideoUploadAssetType.video);
+    if (videoTarget == null) {
+      throw HttpException('Upload session missing video target.', uri: _videosUri);
+    }
+    await _uploadToSignedUrl(target: videoTarget, file: video);
+    uploaded[VideoUploadAssetType.video] = videoTarget;
+
+    if (includeCover) {
+      final coverTarget = session.targetFor(VideoUploadAssetType.cover);
+      if (coverTarget == null) {
+        throw HttpException('Upload session missing cover target.', uri: _videosUri);
+      }
+      await _uploadToSignedUrl(target: coverTarget, file: cover!);
+      uploaded[VideoUploadAssetType.cover] = coverTarget;
     }
 
-    final streamed = await multipart.send();
-    final response = await http.Response.fromStream(streamed);
-
-    if (response.statusCode >= 200 && response.statusCode < 300) {
-      final decoded = jsonDecode(response.body) as Map<String, dynamic>;
-      return VideoUploadJob.fromJson(decoded);
-    }
-
-    throw HttpException(
-      'Upload failed: ${response.statusCode} ${response.reasonPhrase}\n${response.body}',
-      uri: uri,
+    return _completeSession(
+      sessionId: session.id,
+      uploaded: uploaded,
     );
   }
 
@@ -65,8 +70,7 @@ class VideoUploadRepository {
       final decoded = jsonDecode(response.body) as Map<String, dynamic>;
       return VideoUploadJob.fromJson(decoded);
     }
-    throw HttpException('Failed to fetch job $jobId: ${response.statusCode}',
-        uri: uri);
+    throw HttpException('Failed to fetch job $jobId: ${response.statusCode}', uri: uri);
   }
 
   Stream<VideoUploadJob> pollJob(
@@ -86,6 +90,84 @@ class VideoUploadRepository {
   void dispose() {
     _client.close();
   }
+
+  Future<VideoUploadSession> _createSession({
+    required VideoUploadRequest request,
+    required bool includeCover,
+  }) async {
+    final uri = _videosUri.resolve('sessions');
+    final payload = request.toJson(includeCover: includeCover);
+    final response = await _client.post(
+      uri,
+      headers: _jsonHeaders,
+      body: jsonEncode(payload),
+    );
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+      return VideoUploadSession.fromJson(decoded);
+    }
+
+    throw HttpException(
+      'Failed to create upload session: ${response.statusCode} ${response.reasonPhrase}\n${response.body}',
+      uri: uri,
+    );
+  }
+
+  Future<void> _uploadToSignedUrl({
+    required VideoUploadTarget target,
+    required File file,
+  }) async {
+    if (!await file.exists()) {
+      throw FileSystemException('Upload source missing', file.path);
+    }
+
+    final request = http.Request('PUT', target.putUrl);
+    request.headers['content-type'] = target.contentType;
+    if (target.headers.isNotEmpty) {
+      request.headers.addAll(target.headers);
+    }
+    request.bodyBytes = await file.readAsBytes();
+
+    final response = await _client.send(request);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final body = await response.stream.bytesToString();
+      throw HttpException(
+        'Failed to upload ${target.type.name}: ${response.statusCode} ${response.reasonPhrase}\n$body',
+        uri: target.putUrl,
+      );
+    }
+    await response.stream.drain();
+  }
+
+  Future<VideoUploadJob> _completeSession({
+    required String sessionId,
+    required Map<VideoUploadAssetType, VideoUploadTarget> uploaded,
+  }) async {
+    final uri = _videosUri.resolve('sessions/$sessionId/complete');
+    final payload = {
+      'uploaded': {
+        for (final entry in uploaded.entries) entry.key.name: entry.value.objectKey,
+      },
+    };
+    final response = await _client.post(
+      uri,
+      headers: _jsonHeaders,
+      body: jsonEncode(payload),
+    );
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+      return VideoUploadJob.fromJson(decoded);
+    }
+
+    throw HttpException(
+      'Failed to finalize upload session $sessionId: ${response.statusCode} ${response.reasonPhrase}\n${response.body}',
+      uri: uri,
+    );
+  }
+
+  Map<String, String> get _jsonHeaders => const {'content-type': 'application/json'};
 }
 
 class VideoUploadRequest {
@@ -107,17 +189,103 @@ class VideoUploadRequest {
   final bool allowComments;
   final bool allowSharing;
 
-  Map<String, String> toFields() {
+  Map<String, dynamic> toJson({required bool includeCover}) {
     return {
       'description': description,
-      'hashtags': hashtags.join(','),
-      'mentions': mentions.join(','),
+      'hashtags': hashtags,
+      'mentions': mentions,
       'location': location,
       'visibility': visibility,
-      'allowComments': allowComments.toString(),
-      'allowSharing': allowSharing.toString(),
+      'allowComments': allowComments,
+      'allowSharing': allowSharing,
+      'includeCover': includeCover,
     };
   }
+}
+
+enum VideoUploadAssetType { video, cover }
+
+class VideoUploadTarget {
+  const VideoUploadTarget({
+    required this.type,
+    required this.putUrl,
+    required this.contentType,
+    required this.objectKey,
+    Map<String, String>? headers,
+  }) : headers = headers ?? const {};
+
+  factory VideoUploadTarget.fromJson(Map<String, dynamic> json) {
+    final typeValue = json['type'] as String?;
+    final putUrlValue = json['putUrl'] as String? ?? json['url'] as String?;
+    if (putUrlValue == null || putUrlValue.isEmpty) {
+      throw const FormatException('Upload target missing putUrl');
+    }
+    final headerMap = <String, String>{};
+    final rawHeaders = json['headers'];
+    if (rawHeaders is Map) {
+      for (final entry in rawHeaders.entries) {
+        headerMap[entry.key.toString()] = entry.value.toString();
+      }
+    }
+    return VideoUploadTarget(
+      type: _assetTypeFromJson(typeValue),
+      putUrl: Uri.parse(putUrlValue),
+      contentType: (json['contentType'] as String?) ?? 'application/octet-stream',
+      objectKey: (json['objectKey'] as String?) ?? '',
+      headers: headerMap,
+    );
+  }
+
+  final VideoUploadAssetType type;
+  final Uri putUrl;
+  final String contentType;
+  final String objectKey;
+  final Map<String, String> headers;
+}
+
+class VideoUploadSession {
+  const VideoUploadSession({
+    required this.id,
+    required this.targets,
+  });
+
+  factory VideoUploadSession.fromJson(Map<String, dynamic> json) {
+    final uploads = <VideoUploadAssetType, VideoUploadTarget>{};
+    final rawUploads = json['uploads'];
+    if (rawUploads is List) {
+      for (final item in rawUploads) {
+        if (item is Map<String, dynamic>) {
+          final target = VideoUploadTarget.fromJson(item);
+          uploads[target.type] = target;
+        }
+      }
+    } else if (rawUploads is Map) {
+      for (final entry in rawUploads.entries) {
+        final value = entry.value;
+        if (value is Map<String, dynamic>) {
+          final targetJson = Map<String, dynamic>.from(value);
+          targetJson.putIfAbsent('type', () => entry.key.toString());
+          final target = VideoUploadTarget.fromJson(targetJson);
+          uploads[target.type] = target;
+        }
+      }
+    }
+
+    final sessionId = json['sessionId'] as String? ?? json['id'] as String?;
+    if (sessionId == null || sessionId.isEmpty) {
+      throw const FormatException('Upload session missing sessionId');
+    }
+
+    return VideoUploadSession(
+      id: sessionId,
+      targets: uploads,
+    );
+  }
+
+  final String id;
+  final Map<VideoUploadAssetType, VideoUploadTarget> targets;
+
+  VideoUploadTarget? targetFor(VideoUploadAssetType type) => targets[type];
 }
 
 enum VideoUploadJobStatus { processing, ready, failed }
@@ -193,8 +361,7 @@ class VideoUploadJob {
   final List<VideoUploadRendition> renditions;
 
   bool get isComplete =>
-      status == VideoUploadJobStatus.ready ||
-      status == VideoUploadJobStatus.failed;
+      status == VideoUploadJobStatus.ready || status == VideoUploadJobStatus.failed;
   bool get isReady => status == VideoUploadJobStatus.ready;
   bool get isFailed => status == VideoUploadJobStatus.failed;
 }
@@ -207,6 +374,15 @@ VideoUploadJobStatus _parseStatus(String value) {
       return VideoUploadJobStatus.failed;
     default:
       return VideoUploadJobStatus.processing;
+  }
+}
+
+VideoUploadAssetType _assetTypeFromJson(String? value) {
+  switch (value?.toLowerCase()) {
+    case 'cover':
+      return VideoUploadAssetType.cover;
+    default:
+      return VideoUploadAssetType.video;
   }
 }
 
