@@ -25,6 +25,36 @@ const jobs = new Map();
 
 app.use('/media', express.static(MEDIA_ROOT));
 
+const RENDITION_PROFILES = [
+  {
+    id: '1080p',
+    label: '1080p',
+    maxWidth: 1920,
+    maxHeight: 1920,
+    videoBitrate: 5_000_000,
+    audioBitrate: 160_000,
+    h264Profile: 'high',
+  },
+  {
+    id: '720p',
+    label: '720p',
+    maxWidth: 1280,
+    maxHeight: 1280,
+    videoBitrate: 2_800_000,
+    audioBitrate: 128_000,
+    h264Profile: 'high',
+  },
+  {
+    id: '480p',
+    label: '480p',
+    maxWidth: 854,
+    maxHeight: 854,
+    videoBitrate: 1_400_000,
+    audioBitrate: 96_000,
+    h264Profile: 'main',
+  },
+];
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const jobId = req.jobId || (req.jobId = uuidv4());
@@ -140,17 +170,30 @@ async function processJob(job) {
   const jobMediaDir = path.join(MEDIA_ROOT, job.id);
   await fs.ensureDir(jobMediaDir);
   const inputPath = job.source.path;
-  const playlistPath = path.join(jobMediaDir, 'master.m3u8');
-  const segmentTemplate = path.join(jobMediaDir, 'segment_%03d.ts');
   const coverPath = path.join(jobMediaDir, 'cover.jpg');
+  const mp4Dir = path.join(jobMediaDir, 'mp4');
+  const hlsDir = path.join(jobMediaDir, 'hls');
+
+  await fs.ensureDir(mp4Dir);
+  await fs.ensureDir(hlsDir);
 
   try {
     await createCover(job, inputPath, coverPath);
-    await createHls(job, inputPath, playlistPath, segmentTemplate);
+    const mp4Renditions = await transcodeMp4Renditions(inputPath, mp4Dir);
+    await packageHlsVariants(mp4Renditions, hlsDir);
 
     job.outputs = {
       coverUrl: `/media/${job.id}/cover.jpg`,
-      playlistUrl: `/media/${job.id}/master.m3u8`,
+      playlistUrl: `/media/${job.id}/hls/master.m3u8`,
+      renditions: mp4Renditions.map((rendition) => ({
+        id: rendition.profile.id,
+        label: rendition.profile.label,
+        bitrateKbps: Math.round(rendition.profile.videoBitrate / 1000),
+        width: rendition.width,
+        height: rendition.height,
+        mp4Url: `/media/${job.id}/mp4/${rendition.outputName}`,
+        playlistUrl: `/media/${job.id}/hls/${rendition.profile.id}/playlist.m3u8`,
+      })),
     };
     job.status = 'ready';
     job.error = null;
@@ -177,26 +220,152 @@ async function createCover(job, inputPath, coverPath) {
   ]);
 }
 
-async function createHls(job, inputPath, playlistPath, segmentTemplate) {
-  await runFfmpeg([
-    '-y',
-    '-i', inputPath,
-    '-vf', 'scale=-2:1080',
-    '-c:v', 'libx264',
-    '-preset', 'veryfast',
-    '-profile:v', 'high',
-    '-crf', '22',
-    '-g', '120',
-    '-keyint_min', '120',
-    '-sc_threshold', '0',
-    '-c:a', 'aac',
-    '-b:a', '160k',
-    '-ac', '2',
-    '-hls_time', '6',
-    '-hls_playlist_type', 'vod',
-    '-hls_segment_filename', segmentTemplate,
-    playlistPath,
-  ]);
+async function transcodeMp4Renditions(inputPath, outputDir) {
+  const outputs = [];
+  for (const profile of RENDITION_PROFILES) {
+    const outputName = `${profile.id}.mp4`;
+    const outputPath = path.join(outputDir, outputName);
+    const scaleFilter = buildScaleFilter(profile);
+
+    await runFfmpeg([
+      '-y',
+      '-i', inputPath,
+      '-vf', scaleFilter,
+      '-c:v', 'libx264',
+      '-preset', 'veryfast',
+      '-profile:v', profile.h264Profile,
+      '-b:v', `${profile.videoBitrate}`,
+      '-maxrate', `${Math.round(profile.videoBitrate * 1.07)}`,
+      '-bufsize', `${Math.round(profile.videoBitrate * 1.5)}`,
+      '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac',
+      '-b:a', `${profile.audioBitrate}`,
+      '-ac', '2',
+      outputPath,
+    ]);
+
+    const dimensions = await probeVideoDimensions(outputPath);
+
+    outputs.push({
+      profile,
+      outputPath,
+      outputName,
+      width: dimensions.width,
+      height: dimensions.height,
+    });
+  }
+
+  return outputs;
+}
+
+async function packageHlsVariants(renditions, hlsRoot) {
+  const manifestEntries = [];
+
+  for (const rendition of renditions) {
+    const variantDir = path.join(hlsRoot, rendition.profile.id);
+    await fs.ensureDir(variantDir);
+
+    const segmentTemplate = path.join(variantDir, 'segment_%03d.ts');
+    const playlistPath = path.join(variantDir, 'playlist.m3u8');
+
+    await runFfmpeg([
+      '-y',
+      '-i', rendition.outputPath,
+      '-c', 'copy',
+      '-hls_time', '6',
+      '-hls_playlist_type', 'vod',
+      '-hls_flags', 'independent_segments',
+      '-hls_segment_filename', segmentTemplate,
+      playlistPath,
+    ]);
+
+    manifestEntries.push({
+      profile: rendition.profile,
+      width: rendition.width,
+      height: rendition.height,
+    });
+  }
+
+  const masterPath = path.join(hlsRoot, 'master.m3u8');
+  await writeMasterManifest(masterPath, manifestEntries);
+}
+
+async function writeMasterManifest(masterPath, entries) {
+  const lines = ['#EXTM3U', '#EXT-X-VERSION:3', '#EXT-X-INDEPENDENT-SEGMENTS'];
+
+  for (const entry of entries) {
+    const profile = entry.profile;
+    const bandwidth = profile.videoBitrate + profile.audioBitrate;
+    const averageBandwidth = Math.round(bandwidth * 0.95);
+    const width = entry.width || profile.maxWidth;
+    const height = entry.height || profile.maxHeight;
+    lines.push(
+      `#EXT-X-STREAM-INF:BANDWIDTH=${bandwidth},AVERAGE-BANDWIDTH=${averageBandwidth},RESOLUTION=${width}x${height},CODECS="avc1.640029,mp4a.40.2"`,
+    );
+    lines.push(`${profile.id}/playlist.m3u8`);
+  }
+
+  await fs.writeFile(masterPath, `${lines.join('\n')}\n`, 'utf8');
+}
+
+function buildScaleFilter(profile) {
+  const { maxWidth, maxHeight } = profile;
+  return [
+    `scale=w='if(gt(iw,ih),min(${maxWidth},iw),-2)':h='if(gt(iw,ih),-2,min(${maxHeight},ih))'`,
+    'setsar=1',
+    'pad=ceil(iw/2)*2:ceil(ih/2)*2',
+  ].join(',');
+}
+
+async function probeVideoDimensions(filePath) {
+  try {
+    const output = await runFfprobe([
+      '-v',
+      'error',
+      '-select_streams',
+      'v:0',
+      '-show_entries',
+      'stream=width,height',
+      '-of',
+      'json',
+      filePath,
+    ]);
+    const parsed = JSON.parse(output);
+    const stream = Array.isArray(parsed.streams) ? parsed.streams[0] : null;
+    return {
+      width: stream && Number.isFinite(stream.width) ? stream.width : null,
+      height: stream && Number.isFinite(stream.height) ? stream.height : null,
+    };
+  } catch (error) {
+    console.warn('ffprobe failed to read dimensions for', filePath, error);
+    return { width: null, height: null };
+  }
+}
+
+function runFfprobe(args) {
+  return new Promise((resolve, reject) => {
+    const ffprobePath = process.env.FFPROBE_PATH || 'ffprobe';
+    const child = spawn(ffprobePath, args);
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+
+    child.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve(stdout);
+      } else {
+        reject(new Error(`ffprobe exited with code ${code}: ${stderr}`));
+      }
+    });
+  });
 }
 
 function runFfmpeg(args) {

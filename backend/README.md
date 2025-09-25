@@ -53,12 +53,13 @@ npm run dev
 Requirements:
 
 - ffmpeg available on your PATH (`ffmpeg -version`)
+- ffprobe available on your PATH (`ffprobe -version`)
 - Disk write access under `backend/server/uploads/` and `backend/server/media/`
 
 How it works:
 
 1. The client posts raw videos to `POST /api/videos`.
-2. The server stores the upload, runs ffmpeg to create a cover frame and HLS package, and serves them from `/media/<jobId>/`.
+2. The server stores the upload, runs ffmpeg/ffprobe to create MP4 renditions plus an HLS package, and serves them from `/media/<jobId>/`.
 3. Job status is tracked in-memory and exposed via `GET /api/videos/:jobId`.
 4. Flutter polls this endpoint until the job is `ready`, then switches playback to the served manifest.
 

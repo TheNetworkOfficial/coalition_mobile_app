@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -175,9 +176,19 @@ class CreateContentService {
           .lastWhere((job) => job.isComplete);
 
       if (result.isReady) {
-        final playlistUrl = _resolveMediaUrl(backendConfig, result.playlistUrl);
+        final playlistUrl =
+            _resolveMediaUrl(backendConfig, result.playlistUrl);
         final coverUrl = _resolveMediaUrl(backendConfig, result.coverUrl);
-        processedMediaPath = playlistUrl;
+        final fallbacks = _buildFallbackTracks(
+          backendConfig,
+          result,
+          cachePrefix: 'event-${job.id}',
+        );
+        if (playlistUrl != null) {
+          processedMediaPath = playlistUrl;
+        } else if (fallbacks.isNotEmpty) {
+          processedMediaPath = fallbacks.first.uri.toString();
+        }
         adaptiveStream = playlistUrl != null
             ? VideoTrack(
                 uri: Uri.parse(playlistUrl),
@@ -186,7 +197,7 @@ class CreateContentService {
                 cacheKey: 'event-${job.id}-master',
               )
             : null;
-        fallbackStreams = adaptiveStream != null ? [adaptiveStream] : const [];
+        fallbackStreams = fallbacks;
         if (coverUrl != null) {
           coverImage = coverUrl;
         }
@@ -272,6 +283,11 @@ class CreateContentService {
             );
       } else if (job.status == VideoUploadJobStatus.ready) {
         final playlistUrl = _resolveMediaUrl(backendConfig, job.playlistUrl);
+        final fallbackTracks = _buildFallbackTracks(
+          backendConfig,
+          job,
+          cachePrefix: 'feed-${job.id}',
+        );
         VideoTrack? adaptive;
         if (playlistUrl != null) {
           adaptive = VideoTrack(
@@ -287,7 +303,7 @@ class CreateContentService {
               mediaUrl: playlistUrl,
               thumbnailUrl: coverUrl,
               adaptiveStream: adaptive,
-              fallbackStreams: adaptive != null ? [adaptive] : const [],
+              fallbackStreams: fallbackTracks,
               processingJobId: job.id,
               processingError: null,
             );
@@ -309,5 +325,37 @@ class CreateContentService {
     final origin = config.baseUri.replace(path: '/');
     final normalized = path.startsWith('/') ? path.substring(1) : path;
     return origin.resolve(normalized).toString();
+  }
+
+  List<VideoTrack> _buildFallbackTracks(
+    BackendConfig config,
+    VideoUploadJob job, {
+    required String cachePrefix,
+  }) {
+    final tracks = <VideoTrack>[];
+    for (final rendition in job.renditions) {
+      final url =
+          _resolveMediaUrl(config, rendition.mp4Url ?? rendition.playlistUrl);
+      if (url == null || url.isEmpty) {
+        continue;
+      }
+      final width = rendition.width;
+      final height = rendition.height;
+      tracks.add(
+        VideoTrack(
+          uri: Uri.parse(url),
+          label: rendition.label ?? rendition.id,
+          bitrateKbps: rendition.bitrateKbps,
+          resolution: width != null && height != null
+              ? Size(width.toDouble(), height.toDouble())
+              : null,
+          isAdaptive: rendition.mp4Url == null && rendition.playlistUrl != null,
+          cacheKey: rendition.mp4Url != null
+              ? '$cachePrefix-${rendition.id}'
+              : null,
+        ),
+      );
+    }
+    return tracks;
   }
 }
