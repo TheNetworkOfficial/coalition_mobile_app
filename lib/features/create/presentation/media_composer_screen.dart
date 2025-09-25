@@ -9,6 +9,8 @@ import 'dart:ui' as ui;
 
 import '../../feed/domain/feed_content.dart';
 import 'widgets/media_composer_support.dart';
+import '../domain/video_proxy_service.dart';
+import 'widgets/transcode_status.dart';
 
 class MediaCompositionResult {
   const MediaCompositionResult({
@@ -60,6 +62,8 @@ class _MediaComposerScreenState extends State<MediaComposerScreen> {
   Future<void>? _videoInitialization;
 
   bool _showGuides = false;
+  double? _proxyProgress;
+  String? _proxyError;
 
   @override
   void initState() {
@@ -81,8 +85,57 @@ class _MediaComposerScreenState extends State<MediaComposerScreen> {
     super.dispose();
   }
 
-  void _initializeVideo() {
-    final controller = VideoPlayerController.file(File(widget.mediaPath))
+  Future<void> _initializeVideo() async {
+    final proxyService = VideoProxyService.instance;
+    final originalPath = widget.mediaPath;
+    int? fileLength;
+    try {
+      fileLength = await File(originalPath).length();
+    } catch (_) {
+      fileLength = null;
+    }
+
+    String playbackPath = originalPath;
+    try {
+      final shouldProxy = await proxyService.shouldTranscode(
+        path: originalPath,
+        fileLengthBytes: fileLength,
+      );
+      if (shouldProxy) {
+        if (mounted) {
+          setState(() {
+            _proxyProgress = 0;
+            _proxyError = null;
+          });
+        }
+        final result = await proxyService.ensureProxy(
+          originalPath,
+          onProgress: (progress) {
+            if (!mounted) return;
+            setState(() {
+              _proxyProgress = progress;
+            });
+          },
+        );
+        playbackPath = result.proxyPath;
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _proxyError =
+              'We had trouble preparing a lightweight preview. Playing original.';
+        });
+      }
+      playbackPath = originalPath;
+    } finally {
+      if (mounted) {
+        setState(() {
+          _proxyProgress = null;
+        });
+      }
+    }
+
+    final controller = VideoPlayerController.file(File(playbackPath))
       ..setLooping(true)
       ..setVolume(0);
     _videoInitialization = controller.initialize().then((_) {
@@ -243,41 +296,58 @@ class _MediaComposerScreenState extends State<MediaComposerScreen> {
         return FutureBuilder<void>(
           future: _videoInitialization,
           builder: (context, snapshot) {
+            Widget content;
             if (snapshot.connectionState != ConnectionState.done) {
-              return const ColoredBox(
+              content = const ColoredBox(
                 color: Colors.black,
                 child: Center(
                   child: CircularProgressIndicator(color: Colors.white),
                 ),
               );
-            }
-            if (!controller.value.isPlaying) {
-              controller.play();
-            }
-            final videoSize = controller.value.size;
-            final isLandscape = videoSize.width > videoSize.height;
-            Widget player;
-            if (isLandscape) {
-              // rotate landscape source into portrait container
-              player = Transform.rotate(
-                angle: math.pi / 2,
-                child: SizedBox(
-                  width: videoSize.height,
-                  height: videoSize.width,
-                  child: VideoPlayer(controller),
-                ),
-              );
             } else {
-              player = SizedBox(
-                width: videoSize.width,
-                height: videoSize.height,
-                child: VideoPlayer(controller),
+              if (!controller.value.isPlaying) {
+                controller.play();
+              }
+              final videoSize = controller.value.size;
+              final isLandscape = videoSize.width > videoSize.height;
+              Widget player;
+              if (isLandscape) {
+                player = Transform.rotate(
+                  angle: math.pi / 2,
+                  child: SizedBox(
+                    width: videoSize.height,
+                    height: videoSize.width,
+                    child: VideoPlayer(controller),
+                  ),
+                );
+              } else {
+                player = SizedBox(
+                  width: videoSize.width,
+                  height: videoSize.height,
+                  child: VideoPlayer(controller),
+                );
+              }
+
+              content = FittedBox(
+                fit: BoxFit.cover,
+                child: player,
               );
             }
 
-            return FittedBox(
-              fit: BoxFit.cover,
-              child: player,
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                content,
+                if (_proxyProgress != null)
+                  TranscodeProgressOverlay(progress: _proxyProgress),
+                if (_proxyError != null)
+                  Positioned(
+                    left: 16,
+                    right: 16,
+                    bottom: 16,
+                    child: TranscodeErrorBanner(message: _proxyError!),
+                  ),
+              ],
             );
           },
         );

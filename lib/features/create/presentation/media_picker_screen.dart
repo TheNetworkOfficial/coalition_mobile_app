@@ -7,6 +7,8 @@ import 'package:photo_manager/photo_manager.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../feed/domain/feed_content.dart';
+import '../domain/video_proxy_service.dart';
+import 'widgets/transcode_status.dart';
 
 class MediaPickerResult {
   const MediaPickerResult({
@@ -47,6 +49,8 @@ class _MediaPickerScreenState extends State<MediaPickerScreen> {
   int _currentPage = 0;
   bool _isAdvancing = false;
   bool _selectionLoading = false;
+  double? _proxyProgress;
+  String? _proxyError;
 
   File? _selectedFile;
   VideoPlayerController? _previewVideoController;
@@ -191,6 +195,8 @@ class _MediaPickerScreenState extends State<MediaPickerScreen> {
   Future<void> _prepareSelection(AssetEntity asset) async {
     setState(() {
       _selectionLoading = true;
+      _proxyProgress = null;
+      _proxyError = null;
     });
 
     final existingController = _previewVideoController;
@@ -213,7 +219,59 @@ class _MediaPickerScreenState extends State<MediaPickerScreen> {
 
     VideoPlayerController? controller;
     if (asset.type == AssetType.video) {
-      controller = VideoPlayerController.file(file)
+      final proxyService = VideoProxyService.instance;
+      File previewFile = file;
+
+      final fileLength = await file.length();
+      final shouldProxy = await proxyService.shouldTranscode(
+        path: file.path,
+        width: asset.width,
+        height: asset.height,
+        fileLengthBytes: fileLength,
+      );
+
+      if (shouldProxy) {
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _proxyProgress = 0;
+        });
+        try {
+          final result = await proxyService.ensureProxy(
+            file.path,
+            onProgress: (progress) {
+              if (!mounted) return;
+              setState(() {
+                _proxyProgress = progress;
+              });
+            },
+          );
+          previewFile = File(result.proxyPath);
+          if (mounted) {
+            setState(() {
+              _proxyError = null;
+            });
+          }
+        } catch (_) {
+          if (!mounted) {
+            return;
+          }
+          setState(() {
+            _proxyError =
+                'We had trouble preparing a lightweight preview. Playing original.';
+          });
+          previewFile = file;
+        } finally {
+          if (mounted) {
+            setState(() {
+              _proxyProgress = null;
+            });
+          }
+        }
+      }
+
+      controller = VideoPlayerController.file(previewFile)
         ..setLooping(true)
         ..setVolume(0);
       try {
@@ -234,6 +292,7 @@ class _MediaPickerScreenState extends State<MediaPickerScreen> {
       _selectedFile = file;
       _previewVideoController = controller;
       _selectionLoading = false;
+      _proxyProgress = null;
     });
   }
 
@@ -411,9 +470,12 @@ class _MediaPickerScreenState extends State<MediaPickerScreen> {
               fit: StackFit.expand,
               children: [
                 if (_selectionLoading)
-                  const Center(
-                    child: CircularProgressIndicator(color: Colors.white),
-                  )
+                  _proxyProgress != null
+                      ? TranscodeProgressOverlay(progress: _proxyProgress)
+                      : const Center(
+                          child:
+                              CircularProgressIndicator(color: Colors.white),
+                        )
                 else if (asset == null || file == null)
                   const Center(
                     child: Icon(Icons.photo_library_outlined,
@@ -428,6 +490,13 @@ class _MediaPickerScreenState extends State<MediaPickerScreen> {
                     top: 16,
                     right: 16,
                     child: Icon(Icons.videocam, color: Colors.white70),
+                  ),
+                if (_proxyError != null)
+                  Positioned(
+                    left: 12,
+                    right: 12,
+                    bottom: 12,
+                    child: TranscodeErrorBanner(message: _proxyError!),
                   ),
               ],
             ),
