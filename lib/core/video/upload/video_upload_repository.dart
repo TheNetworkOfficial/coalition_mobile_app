@@ -19,14 +19,16 @@ final videoUploadRepositoryProvider = Provider<VideoUploadRepository>((ref) {
 });
 
 class VideoUploadRepository {
-  VideoUploadRepository({required http.Client client, required BackendConfig config})
+  VideoUploadRepository(
+      {required http.Client client, required BackendConfig config})
       : _client = client,
         _config = config;
 
   final http.Client _client;
   final BackendConfig _config;
 
-  Uri get _videosUri => _ensureTrailingSlash(_config.baseUri).resolve('videos/');
+  Uri get _videosUri =>
+      _ensureTrailingSlash(_config.baseUri).resolve('videos/');
 
   Future<VideoUploadJob> uploadVideo({
     required File video,
@@ -43,7 +45,8 @@ class VideoUploadRepository {
 
     final videoTarget = session.targetFor(VideoUploadAssetType.video);
     if (videoTarget == null) {
-      throw HttpException('Upload session missing video target.', uri: _videosUri);
+      throw HttpException('Upload session missing video target.',
+          uri: _videosUri);
     }
     await _uploadToSignedUrl(target: videoTarget, file: video);
     uploaded[VideoUploadAssetType.video] = videoTarget;
@@ -51,7 +54,8 @@ class VideoUploadRepository {
     if (includeCover) {
       final coverTarget = session.targetFor(VideoUploadAssetType.cover);
       if (coverTarget == null) {
-        throw HttpException('Upload session missing cover target.', uri: _videosUri);
+        throw HttpException('Upload session missing cover target.',
+            uri: _videosUri);
       }
       await _uploadToSignedUrl(target: coverTarget, file: cover!);
       uploaded[VideoUploadAssetType.cover] = coverTarget;
@@ -70,7 +74,8 @@ class VideoUploadRepository {
       final decoded = jsonDecode(response.body) as Map<String, dynamic>;
       return VideoUploadJob.fromJson(decoded);
     }
-    throw HttpException('Failed to fetch job $jobId: ${response.statusCode}', uri: uri);
+    throw HttpException('Failed to fetch job $jobId: ${response.statusCode}',
+        uri: uri);
   }
 
   Stream<VideoUploadJob> pollJob(
@@ -147,7 +152,8 @@ class VideoUploadRepository {
     final uri = _videosUri.resolve('sessions/$sessionId/complete');
     final payload = {
       'uploaded': {
-        for (final entry in uploaded.entries) entry.key.name: entry.value.objectKey,
+        for (final entry in uploaded.entries)
+          entry.key.name: entry.value.objectKey,
       },
     };
     final response = await _client.post(
@@ -167,7 +173,8 @@ class VideoUploadRepository {
     );
   }
 
-  Map<String, String> get _jsonHeaders => const {'content-type': 'application/json'};
+  Map<String, String> get _jsonHeaders =>
+      const {'content-type': 'application/json'};
 }
 
 class VideoUploadRequest {
@@ -230,7 +237,8 @@ class VideoUploadTarget {
     return VideoUploadTarget(
       type: _assetTypeFromJson(typeValue),
       putUrl: Uri.parse(putUrlValue),
-      contentType: (json['contentType'] as String?) ?? 'application/octet-stream',
+      contentType:
+          (json['contentType'] as String?) ?? 'application/octet-stream',
       objectKey: (json['objectKey'] as String?) ?? '',
       headers: headerMap,
     );
@@ -361,7 +369,8 @@ class VideoUploadJob {
   final List<VideoUploadRendition> renditions;
 
   bool get isComplete =>
-      status == VideoUploadJobStatus.ready || status == VideoUploadJobStatus.failed;
+      status == VideoUploadJobStatus.ready ||
+      status == VideoUploadJobStatus.failed;
   bool get isReady => status == VideoUploadJobStatus.ready;
   bool get isFailed => status == VideoUploadJobStatus.failed;
 }
