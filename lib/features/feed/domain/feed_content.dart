@@ -73,6 +73,8 @@ class FeedContent extends Equatable {
     this.processingStatus = FeedMediaProcessingStatus.ready,
     this.processingJobId,
     this.processingError,
+    this.storyboardUrl,
+    this.vttUrl,
   });
 
   final String id;
@@ -101,6 +103,8 @@ class FeedContent extends Equatable {
   final FeedMediaProcessingStatus processingStatus;
   final String? processingJobId;
   final String? processingError;
+  final String? storyboardUrl;
+  final String? vttUrl;
 
   bool get isVideo => mediaType == FeedMediaType.video;
   bool get isImage => mediaType == FeedMediaType.image;
@@ -171,6 +175,8 @@ class FeedContent extends Equatable {
     FeedMediaProcessingStatus? processingStatus,
     Object? processingJobId = _sentinel,
     Object? processingError = _sentinel,
+    Object? storyboardUrl = _sentinel,
+    Object? vttUrl = _sentinel,
   }) {
     return FeedContent(
       id: id,
@@ -212,6 +218,10 @@ class FeedContent extends Equatable {
       processingError: processingError == _sentinel
           ? this.processingError
           : processingError as String?,
+      storyboardUrl: storyboardUrl == _sentinel
+          ? this.storyboardUrl
+          : storyboardUrl as String?,
+      vttUrl: vttUrl == _sentinel ? this.vttUrl : vttUrl as String?,
     );
   }
 
@@ -245,6 +255,8 @@ class FeedContent extends Equatable {
         processingStatus,
         processingJobId,
         processingError,
+        storyboardUrl,
+        vttUrl,
       ];
 }
 
