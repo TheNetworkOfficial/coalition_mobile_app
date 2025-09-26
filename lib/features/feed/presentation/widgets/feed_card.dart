@@ -495,6 +495,8 @@ class _FeedMediaState extends State<_FeedMedia> {
           aspectRatio: content.aspectRatio,
           showControls: false,
           cacheEnabled: true,
+          storyboardUrl: content.storyboardUrl,
+          vttUrl: content.vttUrl,
         ),
       );
     }

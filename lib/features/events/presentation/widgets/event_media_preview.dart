@@ -18,6 +18,8 @@ class EventMediaPreview extends StatelessWidget {
     this.coverImagePath,
     this.autoplay = false,
     this.videoTracks = const <VideoTrack>[],
+    this.storyboardUrl,
+    this.vttUrl,
     super.key,
   });
 
@@ -28,6 +30,8 @@ class EventMediaPreview extends StatelessWidget {
   final String? coverImagePath;
   final bool autoplay;
   final List<VideoTrack> videoTracks;
+  final String? storyboardUrl;
+  final String? vttUrl;
 
   @override
   Widget build(BuildContext context) {
@@ -86,6 +90,8 @@ class EventMediaPreview extends StatelessWidget {
         aspectRatio: aspectRatio,
         showControls: true,
         cacheEnabled: true,
+        storyboardUrl: storyboardUrl,
+        vttUrl: vttUrl,
       );
     }
 
