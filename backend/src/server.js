@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import bodyParser from 'body-parser';
 import muxPkg from '@mux/mux-node';
+import * as db from './db.js';
 const { Mux, Webhooks } = muxPkg;
 
 const app = express();
@@ -70,9 +71,13 @@ app.get('/api/mux/uploads/:id', async (req, res) => {
 // --- 3) Webhook to finalize posts ---
 // POST /webhooks/mux
 app.post('/webhooks/mux', async (req, res) => {
-  // Verify signature
   const signature = req.headers['mux-signature'];
   const secret = process.env.MUX_WEBHOOK_SECRET;
+  if (!secret) {
+    console.error('Mux webhook secret is not configured.');
+    return res.sendStatus(500);
+  }
+
   let event;
   try {
     Webhooks.verifyHeader(req.body, signature, secret);
@@ -83,25 +88,53 @@ app.post('/webhooks/mux', async (req, res) => {
   }
 
   try {
-    const { type, data } = event;
+    const { type, data = {} } = event;
 
     if (type === 'video.upload.asset_created') {
-      // data.asset_id exists; data.id is the Direct Upload id
-      // If you set new_asset_settings.passthrough when creating the upload,
-      // use data.passthrough to look up the draft post in your DB and attach asset_id.
-      // await db.markAssetCreated({ passthrough: data.passthrough, assetId: data.asset_id });
+      const uploadId = data.id ?? data.upload_id ?? data.source_upload_id ?? data.upload?.id;
+      const updated = db.markAssetCreated({
+        passthrough: data.passthrough ?? data.custom_data?.passthrough ?? null,
+        assetId: data.asset_id ?? null,
+        uploadId: uploadId ?? null,
+      });
+      if (!updated) {
+        console.warn('No post found for Mux upload asset_created event', {
+          uploadId,
+          passthrough: data.passthrough,
+        });
+      }
     }
 
     if (type === 'video.asset.ready') {
-      // Finalize your post: store playback info for the feed.
-      // Typical fields:
-      // - data.id (asset id)
-      // - data.playback_ids[0].id  => playback_id
-      // - build HLS URL: https://stream.mux.com/${playback_id}.m3u8
-      // await db.finalizePost({ passthrough: data.passthrough, playbackId, assetId: data.id });
+      const uploadId = data.upload_id ?? data.source_upload_id ?? data.upload?.id;
+      const playback = Array.isArray(data.playback_ids)
+        ? data.playback_ids.find((id) => id.policy === 'public') ?? data.playback_ids[0]
+        : null;
+      const playbackId = playback?.id ?? null;
+      const playbackUrl = playbackId && playback?.policy === 'public'
+        ? `https://stream.mux.com/${playbackId}.m3u8`
+        : null;
+      const duration = typeof data.duration === 'number' ? data.duration : null;
+      const aspectRatio = typeof data.aspect_ratio === 'string' ? data.aspect_ratio : null;
+
+      const finalized = db.finalizePost({
+        passthrough: data.passthrough ?? data.custom_data?.passthrough ?? null,
+        playbackId,
+        playbackUrl,
+        duration,
+        aspectRatio,
+        assetId: data.id ?? null,
+        uploadId: uploadId ?? null,
+      });
+      if (!finalized) {
+        console.warn('No post found for Mux asset_ready event', {
+          assetId: data.id,
+          uploadId,
+          passthrough: data.passthrough,
+        });
+      }
     }
 
-    // Handle other events as needed; always 200 quickly.
     return res.sendStatus(200);
   } catch (err) {
     console.error('Webhook handling error', err);
