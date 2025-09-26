@@ -206,8 +206,14 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
   Future<String> _ensureCoverImage(VideoTimeline timeline) async {
     final cached = _localCoverPath ?? timeline.coverImagePath;
     if (cached != null && cached.isNotEmpty) {
-      _localCoverPath = cached;
-      return cached;
+      if (_isRemoteAsset(cached)) {
+        return cached;
+      }
+      final file = File(cached);
+      if (await file.exists()) {
+        _localCoverPath = cached;
+        return cached;
+      }
     }
 
     final seconds = (timeline.coverTimeMs ?? 0) / 1000;
@@ -223,6 +229,10 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
     final cached = _uploadedCoverUrl;
     if (cached != null && cached.isNotEmpty) {
       return cached;
+    }
+    if (_isRemoteAsset(coverPath)) {
+      _uploadedCoverUrl = coverPath;
+      return coverPath;
     }
     final uploaded = await _uploadCoverImage(coverPath);
     _uploadedCoverUrl = uploaded;
@@ -382,6 +392,17 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
     final normalized = path.replaceAll('\\', '/');
     final segments = normalized.split('/');
     return segments.isNotEmpty ? segments.last : path;
+  }
+
+  bool _isRemoteAsset(String path) {
+    final uri = Uri.tryParse(path);
+    if (uri == null) {
+      return false;
+    }
+    if (!uri.hasScheme) {
+      return false;
+    }
+    return uri.scheme == 'http' || uri.scheme == 'https';
   }
 
   String _statusLabel() {
