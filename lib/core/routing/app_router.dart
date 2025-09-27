@@ -16,6 +16,9 @@ import '../../features/events/presentation/event_detail_screen.dart';
 import '../../features/events/presentation/events_feed_screen.dart';
 import '../../features/home/presentation/home_shell.dart';
 import '../../features/profile/presentation/profile_screen.dart';
+import '../../features/video/views/video_editor_page.dart';
+import '../../features/video/views/video_picker_page.dart';
+import '../../features/video/views/video_post_page.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'root');
 final _shellNavigatorKey =
@@ -125,6 +128,24 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         path: '/create/event',
         name: CreateEventScreen.routeName,
         builder: (context, state) => const CreateEventScreen(),
+      ),
+      GoRoute(
+        parentNavigatorKey: _rootNavigatorKey,
+        path: '/create/video',
+        name: VideoPickerPage.routeName,
+        builder: (context, state) => const VideoPickerPage(),
+        routes: [
+          GoRoute(
+            path: 'editor',
+            name: VideoEditorPage.routeName,
+            builder: (context, state) => const VideoEditorPage(),
+          ),
+          GoRoute(
+            path: 'post',
+            name: VideoPostPage.routeName,
+            builder: (context, state) => const VideoPostPage(),
+          ),
+        ],
       ),
       GoRoute(
         parentNavigatorKey: _rootNavigatorKey,

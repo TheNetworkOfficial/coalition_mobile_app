@@ -33,6 +33,13 @@ class _MediaPickerScreenState extends State<MediaPickerScreen> {
   static const _pageSize = 80;
   static const double _defaultVideoAspectRatio = 9 / 16;
   static const double _defaultImageAspectRatio = 4 / 5;
+  static const PermissionRequestOption _permissionRequestOption =
+      PermissionRequestOption(
+    androidPermission: AndroidPermission(
+      type: RequestType.common,
+      mediaLocation: false,
+    ),
+  );
 
   final ScrollController _gridController = ScrollController();
 
@@ -44,6 +51,7 @@ class _MediaPickerScreenState extends State<MediaPickerScreen> {
 
   bool _initializing = true;
   bool _permissionDenied = false;
+  PermissionState? _permissionState;
   bool _loadingMore = false;
   bool _hasMore = true;
   int _currentPage = 0;
@@ -71,16 +79,39 @@ class _MediaPickerScreenState extends State<MediaPickerScreen> {
     super.dispose();
   }
 
+  bool _permissionHasAccess(PermissionState state) {
+    return state == PermissionState.authorized ||
+        state == PermissionState.limited;
+  }
+
   Future<void> _initGallery() async {
-    final permission = await PhotoManager.requestPermissionExtend();
-    if (!permission.hasAccess) {
-      if (!mounted) return;
+    final permission = await PhotoManager.getPermissionState(
+      requestOption: _permissionRequestOption,
+    );
+    if (!mounted) return;
+
+    if (!_permissionHasAccess(permission)) {
       setState(() {
         _permissionDenied = true;
+        _permissionState = permission;
         _initializing = false;
       });
       return;
     }
+
+    setState(() {
+      _permissionState = permission;
+    });
+
+    await _loadGalleryAssets();
+  }
+
+  Future<void> _loadGalleryAssets() async {
+    if (!mounted) return;
+    setState(() {
+      _initializing = true;
+      _permissionDenied = false;
+    });
 
     final paths = await PhotoManager.getAssetPathList(
       type: RequestType.common,
@@ -129,6 +160,35 @@ class _MediaPickerScreenState extends State<MediaPickerScreen> {
     if (first != null) {
       await _prepareSelection(first);
     }
+  }
+
+  Future<void> _requestPermission() async {
+    final permission = await PhotoManager.requestPermissionExtend(
+      requestOption: _permissionRequestOption,
+    );
+    if (!mounted) return;
+
+    if (_permissionHasAccess(permission)) {
+      setState(() {
+        _permissionState = permission;
+      });
+      await _loadGalleryAssets();
+      return;
+    }
+
+    setState(() {
+      _permissionDenied = true;
+      _permissionState = permission;
+    });
+  }
+
+  bool get _shouldShowSettingsButton {
+    final permission = _permissionState;
+    if (permission == null) {
+      return false;
+    }
+    return permission == PermissionState.denied ||
+        permission == PermissionState.restricted;
   }
 
   void _handleScroll() {
@@ -368,6 +428,8 @@ class _MediaPickerScreenState extends State<MediaPickerScreen> {
 
   Future<void> _openSettings() async {
     await PhotoManager.openSetting();
+    if (!mounted) return;
+    await _initGallery();
   }
 
   @override
@@ -381,7 +443,11 @@ class _MediaPickerScreenState extends State<MediaPickerScreen> {
                 child: CircularProgressIndicator(),
               )
             : _permissionDenied
-                ? _PermissionView(onOpenSettings: _openSettings)
+                ? _PermissionView(
+                    onRequestPermission: _requestPermission,
+                    onOpenSettings: _openSettings,
+                    showSettings: _shouldShowSettingsButton,
+                  )
                 : _visibleAssets.isEmpty
                     ? _EmptyGalleryView(
                         onClose: () => Navigator.of(context).maybePop())
@@ -772,9 +838,15 @@ class _AssetThumbnail extends StatelessWidget {
 }
 
 class _PermissionView extends StatelessWidget {
-  const _PermissionView({required this.onOpenSettings});
+  const _PermissionView({
+    required this.onRequestPermission,
+    required this.onOpenSettings,
+    required this.showSettings,
+  });
 
+  final VoidCallback onRequestPermission;
   final VoidCallback onOpenSettings;
+  final bool showSettings;
 
   @override
   Widget build(BuildContext context) {
@@ -801,11 +873,27 @@ class _PermissionView extends StatelessWidget {
             style: TextStyle(color: Colors.white70),
             textAlign: TextAlign.center,
           ),
+          if (showSettings)
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text(
+                'If you previously denied access, enable it from system settings.',
+                style: TextStyle(color: Colors.white54),
+                textAlign: TextAlign.center,
+              ),
+            ),
           const SizedBox(height: 24),
           FilledButton(
-            onPressed: onOpenSettings,
-            child: const Text('Open settings'),
+            onPressed: onRequestPermission,
+            child: const Text('Allow access'),
           ),
+          if (showSettings) ...[
+            const SizedBox(height: 12),
+            OutlinedButton(
+              onPressed: onOpenSettings,
+              child: const Text('Open settings'),
+            ),
+          ],
           const SizedBox(height: 12),
           TextButton(
             onPressed: () => Navigator.of(context).maybePop(),
