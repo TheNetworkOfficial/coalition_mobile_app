@@ -1,14 +1,13 @@
 import 'dart:io';
 
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 final videoPermissionServiceProvider = Provider<VideoPermissionService>((ref) {
-  final service = VideoPermissionService();
-  service.ensureRequestedOnLaunch();
-  return service;
+  return VideoPermissionService();
 });
 
 class VideoPermissionResult {
@@ -34,48 +33,50 @@ class VideoPermissionException implements Exception {
 }
 
 class VideoPermissionService {
-  bool _launchRequestScheduled = false;
+  int? _cachedAndroidSdkInt;
+  DeviceInfoPlugin? _deviceInfo;
 
-  void ensureRequestedOnLaunch() {
-    if (_launchRequestScheduled) {
-      return;
-    }
-    _launchRequestScheduled = true;
-    Future<void>.microtask(() async {
-      await ensureGranted();
-    });
-  }
-
-  Future<VideoPermissionResult> ensureGranted(
-      {bool requestIfDenied = true}) async {
+  Future<VideoPermissionResult> ensureGranted({
+    bool requestIfDenied = true,
+  }) async {
     if (!_requiresRuntimePermission) {
       return const VideoPermissionResult(
-          granted: true, permanentlyDenied: false);
+        granted: true,
+        permanentlyDenied: false,
+      );
     }
 
     final statuses = await _runPermissionQuery(_currentStatuses);
     if (_anyGranted(statuses)) {
       return const VideoPermissionResult(
-          granted: true, permanentlyDenied: false);
+        granted: true,
+        permanentlyDenied: false,
+      );
     }
 
     if (!requestIfDenied) {
       final permanentlyDenied = statuses.isNotEmpty &&
           statuses.every((status) => status.isPermanentlyDenied);
       return VideoPermissionResult(
-          granted: false, permanentlyDenied: permanentlyDenied);
+        granted: false,
+        permanentlyDenied: permanentlyDenied,
+      );
     }
 
     final requested = await _runPermissionQuery(_requestPermissions);
     if (_anyGranted(requested)) {
       return const VideoPermissionResult(
-          granted: true, permanentlyDenied: false);
+        granted: true,
+        permanentlyDenied: false,
+      );
     }
 
     final permanentlyDenied = requested.isNotEmpty &&
         requested.every((status) => status.isPermanentlyDenied);
     return VideoPermissionResult(
-        granted: false, permanentlyDenied: permanentlyDenied);
+      granted: false,
+      permanentlyDenied: permanentlyDenied,
+    );
   }
 
   Future<void> openAppSettingsPage() async {
@@ -97,7 +98,7 @@ class VideoPermissionService {
   }
 
   Future<List<PermissionStatus>> _currentStatuses() async {
-    final permissions = _relevantPermissions;
+    final permissions = await _relevantPermissions();
     if (permissions.isEmpty) {
       return const <PermissionStatus>[];
     }
@@ -107,7 +108,7 @@ class VideoPermissionService {
   }
 
   Future<List<PermissionStatus>> _requestPermissions() async {
-    final permissions = _relevantPermissions;
+    final permissions = await _relevantPermissions();
     if (permissions.isEmpty) {
       return const <PermissionStatus>[];
     }
@@ -119,7 +120,8 @@ class VideoPermissionService {
   }
 
   Future<List<PermissionStatus>> _runPermissionQuery(
-      Future<List<PermissionStatus>> Function() callback) async {
+    Future<List<PermissionStatus>> Function() callback,
+  ) async {
     try {
       return await callback();
     } on MissingPluginException catch (error, stackTrace) {
@@ -127,15 +129,14 @@ class VideoPermissionService {
     } on PlatformException catch (error, stackTrace) {
       _throwPermissionError(error, stackTrace);
     }
-
-    throw StateError('Video permission query failed without an error.');
   }
 
   Never _throwPermissionError(Object error, StackTrace stackTrace) {
-    final message =
-        error is PlatformException && error.message != null && error.message!.isNotEmpty
-            ? error.message!
-            : 'Unable to verify video permissions. Please try again later.';
+    final message = error is PlatformException &&
+            error.message != null &&
+            error.message!.isNotEmpty
+        ? error.message!
+        : 'Unable to verify video permissions. Please try again later.';
     Error.throwWithStackTrace(
       VideoPermissionException(message, cause: error),
       stackTrace,
@@ -148,24 +149,77 @@ class VideoPermissionService {
         status == PermissionStatus.limited);
   }
 
-  List<Permission> get _relevantPermissions {
+  Future<List<Permission>> _relevantPermissions() async {
     if (kIsWeb) {
       return const <Permission>[];
     }
     if (Platform.isAndroid) {
-      final permissions = <Permission>{
-        Permission.storage,
-      };
-      try {
-        permissions.add(Permission.videos);
-      } catch (_) {
-        // Some plugin builds expose Permission.videos only on newer SDKs.
+      final sdkInt = await _androidSdkInt();
+      if (sdkInt != null && sdkInt >= 33) {
+        return const <Permission>[Permission.videos];
       }
-      return permissions.toList();
+      return const <Permission>[Permission.storage];
     }
     if (Platform.isIOS) {
       return const <Permission>[Permission.photos];
     }
     return const <Permission>[];
+  }
+
+  Future<int?> _androidSdkInt() async {
+    if (!Platform.isAndroid) {
+      return null;
+    }
+    final cached = _cachedAndroidSdkInt;
+    if (cached != null) {
+      return cached;
+    }
+
+    try {
+      final plugin = _deviceInfo ??= DeviceInfoPlugin();
+      final info = await plugin.androidInfo;
+      _cachedAndroidSdkInt = info.version.sdkInt;
+      if (_cachedAndroidSdkInt != null) {
+        return _cachedAndroidSdkInt;
+      }
+    } catch (_) {
+      // Fall through to secondary detection.
+    }
+
+    final parsed = _parseSdkFromPlatformVersion();
+    if (parsed != null) {
+      _cachedAndroidSdkInt = parsed;
+    }
+    return _cachedAndroidSdkInt;
+  }
+
+  int? _parseSdkFromPlatformVersion() {
+    final version = Platform.operatingSystemVersion;
+    final match = RegExp(r'Android\s+(\d+)(?:\.(\d+))?').firstMatch(version);
+    if (match == null) {
+      return null;
+    }
+    final major = int.tryParse(match.group(1) ?? '');
+    if (major == null) {
+      return null;
+    }
+    switch (major) {
+      case 14:
+        return 34; // Android 14
+      case 13:
+        return 33;
+      case 12:
+        return 31; // 12L maps to 32 but storage perms remain required
+      case 11:
+        return 30;
+      case 10:
+        return 29;
+      case 9:
+        return 28;
+      case 8:
+        return 26; // Approximate for Oreo
+      default:
+        return null;
+    }
   }
 }

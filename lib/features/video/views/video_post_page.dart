@@ -8,14 +8,15 @@ import 'package:http/http.dart' as http;
 import '../../../core/config/backend_config_provider.dart';
 import '../models/video_timeline.dart';
 import '../platform/video_native.dart';
-import '../providers/video_timeline_provider.dart';
+import '../providers/video_draft_provider.dart';
 import '../services/mux_upload_service.dart';
 
 class VideoPostPage extends ConsumerStatefulWidget {
-  const VideoPostPage({super.key, this.httpClientOverride});
+  const VideoPostPage({super.key, this.draftId, this.httpClientOverride});
 
   static const routeName = 'video-post';
 
+  final String? draftId;
   final http.Client? httpClientOverride;
 
   @override
@@ -42,6 +43,9 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
   void initState() {
     super.initState();
     _httpClient = widget.httpClientOverride ?? http.Client();
+    if (widget.draftId != null) {
+      ref.read(videoDraftsProvider.notifier).setActiveDraft(widget.draftId);
+    }
   }
 
   @override
@@ -142,6 +146,11 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
         coverUrl: coverUrl,
         timeline: timeline,
       );
+
+      await ref
+          .read(videoDraftsProvider.notifier)
+          .clearActiveDraft(deleteAssets: true);
+      await _purgeLocalScratchFiles();
 
       if (!mounted) {
         return;
@@ -319,32 +328,26 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
     final ticket = await ref.read(muxUploadServiceProvider).createDirectUpload(
           filename: _basename(video.path),
           filesizeBytes: filesize,
-          contentType: 'video/mp4',
           preferTus: true,
         );
     _currentTicket = ticket;
-    _uploadCompleted = false;
     return ticket;
   }
 
   Future<void> _performMuxUpload(MuxUploadTicket ticket, File video) async {
-    setState(() {
-      _stage = _PostStage.uploading;
-      _uploadProgress = 0;
-    });
-
-    await ref.read(muxUploadServiceProvider).uploadVideo(
-          ticket: ticket,
-          mp4: video,
-          onProgress: (sent, total) {
-            if (!mounted) {
-              return;
-            }
-            setState(() {
-              _uploadProgress = total <= 0 ? 0 : (sent / total).clamp(0.0, 1.0);
-            });
-          },
-        );
+    final service = ref.read(muxUploadServiceProvider);
+    await service.uploadVideo(
+      ticket: ticket,
+      mp4: video,
+      onProgress: (sent, total) {
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _uploadProgress = total == 0 ? 0 : sent / total;
+        });
+      },
+    );
   }
 
   Future<void> _postToBackend({
@@ -352,21 +355,19 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
     required String coverUrl,
     required VideoTimeline timeline,
   }) async {
-    setState(() {
-      _stage = _PostStage.processing;
-    });
+    final uri = _resolveBackendUri('posts/video');
+    final payload = {
+      'caption': _captionController.text,
+      'is_private': _isPrivate,
+      'mux_upload_id': uploadId,
+      'cover_url': coverUrl,
+      'timeline': _buildTimelineJson(timeline),
+    };
 
-    final uri = _resolveBackendUri('posts');
     final response = await _httpClient.post(
       uri,
       headers: const {'content-type': 'application/json'},
-      body: jsonEncode({
-        'mux_upload_id': uploadId,
-        'cover_url': coverUrl,
-        'caption': _captionController.text.trim(),
-        'duration_ms': _calculateDurationMs(timeline),
-        'source_device': Platform.isIOS ? 'ios' : 'android',
-      }),
+      body: jsonEncode(payload),
     );
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -377,47 +378,55 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
     }
   }
 
-  int _calculateDurationMs(VideoTimeline timeline) {
-    final start = timeline.trimStartMs ?? 0;
-    final end = timeline.trimEndMs;
-    if (end != null && end > start) {
-      return end - start;
-    }
-    final coverTime = timeline.coverTimeMs;
-    if (coverTime != null && coverTime > start) {
-      return coverTime - start;
-    }
-    return 0;
-  }
-
   Uri _resolveBackendUri(String path) {
-    final config = ref.read(backendConfigProvider);
-    return _ensureTrailingSlash(config.baseUri).resolve(path);
+    final backendConfig = ref.read(backendConfigProvider);
+    final base = backendConfig.baseUri;
+    return _ensureTrailingSlash(base).resolve(path);
   }
 
   Uri _ensureTrailingSlash(Uri uri) {
-    if (uri.path.endsWith('/')) {
-      return uri;
-    }
-    final path = uri.path.isEmpty ? '/' : '${uri.path}/';
+    final path = uri.path.endsWith('/') ? uri.path : '${uri.path}/';
     return uri.replace(path: path);
   }
 
   String _basename(String path) {
-    final normalized = path.replaceAll('\\', '/');
-    final segments = normalized.split('/');
-    return segments.isNotEmpty ? segments.last : path;
+    final index = path.lastIndexOf('/');
+    if (index == -1) {
+      return path;
+    }
+    return path.substring(index + 1);
   }
 
   bool _isRemoteAsset(String path) {
-    final uri = Uri.tryParse(path);
-    if (uri == null) {
-      return false;
+    return path.startsWith('http://') || path.startsWith('https://');
+  }
+
+  Future<void> _purgeLocalScratchFiles() async {
+    final exported = _exportedVideoFile;
+    if (exported != null && await exported.exists()) {
+      try {
+        await exported.delete();
+      } catch (_) {}
     }
-    if (!uri.hasScheme) {
-      return false;
+    _exportedVideoFile = null;
+
+    final cover = _localCoverPath;
+    if (cover != null && cover.isNotEmpty) {
+      await _deleteIfExists(cover);
     }
-    return uri.scheme == 'http' || uri.scheme == 'https';
+    _localCoverPath = null;
+    _uploadedCoverUrl = null;
+    _currentTicket = null;
+    _uploadCompleted = false;
+  }
+
+  Future<void> _deleteIfExists(String path) async {
+    final file = File(path);
+    if (await file.exists()) {
+      try {
+        await file.delete();
+      } catch (_) {}
+    }
   }
 
   String _statusLabel() {
@@ -425,15 +434,14 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
       case _PostStage.exporting:
         return 'Exporting video…';
       case _PostStage.uploading:
-        final percent =
-            (_uploadProgress * 100).clamp(0.0, 100.0).toStringAsFixed(0);
-        return _uploadProgress > 0
-            ? 'Uploading video… $percent%'
-            : 'Uploading video…';
+        return 'Uploading to Mux…';
       case _PostStage.processing:
-        return 'Processing video…';
+        return 'Finalizing post…';
       case _PostStage.idle:
-        return '';
+        if (_uploadFailed) {
+          return 'Upload failed. Please try again.';
+        }
+        return 'Ready to post';
     }
   }
 
@@ -460,7 +468,7 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
 
   @override
   Widget build(BuildContext context) {
-    final timeline = ref.watch(videoTimelineProvider);
+    final timeline = ref.watch(activeVideoTimelineProvider);
     final isBusy = _stage == _PostStage.exporting ||
         _stage == _PostStage.uploading ||
         _stage == _PostStage.processing;

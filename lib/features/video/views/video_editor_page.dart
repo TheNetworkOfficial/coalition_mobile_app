@@ -5,14 +5,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:video_player/video_player.dart';
 
+import '../models/video_draft.dart';
 import '../models/video_timeline.dart';
-import '../providers/video_timeline_provider.dart';
+import '../providers/video_draft_provider.dart';
 import 'video_post_page.dart';
 
 class VideoEditorPage extends ConsumerStatefulWidget {
-  const VideoEditorPage({super.key});
+  const VideoEditorPage({super.key, this.draftId});
 
   static const routeName = 'video-editor';
+
+  final String? draftId;
 
   @override
   ConsumerState<VideoEditorPage> createState() => _VideoEditorPageState();
@@ -25,12 +28,18 @@ class _VideoEditorPageState extends ConsumerState<VideoEditorPage> {
   @override
   void initState() {
     super.initState();
-    final timeline = ref.read(videoTimelineProvider);
-    if (timeline != null) {
-      _initializeController(timeline);
+
+    if (widget.draftId != null) {
+      ref.read(videoDraftsProvider.notifier).setActiveDraft(widget.draftId);
     }
+
+    final draft = ref.read(activeVideoDraftProvider);
+    if (draft != null) {
+      _initializeController(draft.timeline);
+    }
+
     ref.listen<VideoTimeline?>(
-      videoTimelineProvider,
+      activeVideoTimelineProvider,
       (previous, next) {
         if (!mounted) {
           return;
@@ -91,10 +100,9 @@ class _VideoEditorPageState extends ConsumerState<VideoEditorPage> {
     });
     final timeMs = (positionSeconds * 1000).round();
     try {
-      await ref.read(videoTimelineProvider.notifier).generateCover(
-            filePath: timeline.sourcePath,
-            timeMs: timeMs,
-          );
+      await ref
+          .read(videoDraftsProvider.notifier)
+          .generateCover(timeMs: timeMs);
     } catch (error) {
       if (!mounted) {
         return;
@@ -137,9 +145,7 @@ class _VideoEditorPageState extends ConsumerState<VideoEditorPage> {
                     backgroundColor: Colors.black45,
                   ),
                   icon: Icon(
-                    controller.value.isPlaying
-                        ? Icons.pause
-                        : Icons.play_arrow,
+                    controller.value.isPlaying ? Icons.pause : Icons.play_arrow,
                     color: Colors.white,
                   ),
                   onPressed: () {
@@ -167,7 +173,8 @@ class _VideoEditorPageState extends ConsumerState<VideoEditorPage> {
 
   @override
   Widget build(BuildContext context) {
-    final timeline = ref.watch(videoTimelineProvider);
+    final draft = ref.watch(activeVideoDraftProvider);
+    final timeline = draft?.timeline;
     final controller = _controller;
 
     return Scaffold(
@@ -176,33 +183,31 @@ class _VideoEditorPageState extends ConsumerState<VideoEditorPage> {
           ? const Center(
               child: Text('Select a clip to begin editing'),
             )
-          : _buildEditor(context, timeline, controller),
+          : _buildEditor(context, draft!, controller),
     );
   }
 
   Widget _buildEditor(
     BuildContext context,
-    VideoTimeline timeline,
+    VideoDraft draft,
     VideoPlayerController? controller,
   ) {
+    final timeline = draft.timeline;
     final isInitialized = controller?.value.isInitialized ?? false;
     final duration = isInitialized ? controller!.value.duration : Duration.zero;
-    final durationSeconds = duration.inMilliseconds > 0
-        ? duration.inMilliseconds / 1000
-        : 0.0;
+    final durationSeconds =
+        duration.inMilliseconds > 0 ? duration.inMilliseconds / 1000 : 0.0;
     final sliderMax = durationSeconds <= 0 ? 1.0 : durationSeconds;
     final readyController = isInitialized ? controller : null;
 
-    final trimStartSeconds = ((timeline.trimStartMs ?? 0) / 1000)
-        .clamp(0, sliderMax)
-        .toDouble();
-    final trimEndSeconds = ((timeline.trimEndMs ?? duration.inMilliseconds) /
-            1000)
-        .clamp(trimStartSeconds, sliderMax)
-        .toDouble();
-    final coverSeconds = ((timeline.coverTimeMs ?? 0) / 1000)
-        .clamp(0, sliderMax)
-        .toDouble();
+    final trimStartSeconds =
+        ((timeline.trimStartMs ?? 0) / 1000).clamp(0, sliderMax).toDouble();
+    final trimEndSeconds =
+        ((timeline.trimEndMs ?? duration.inMilliseconds) / 1000)
+            .clamp(trimStartSeconds, sliderMax)
+            .toDouble();
+    final coverSeconds =
+        ((timeline.coverTimeMs ?? 0) / 1000).clamp(0, sliderMax).toDouble();
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -248,7 +253,7 @@ class _VideoEditorPageState extends ConsumerState<VideoEditorPage> {
               onChanged: (values) {
                 final startMs = (values.start * 1000).round();
                 final endMs = (values.end * 1000).round();
-                ref.read(videoTimelineProvider.notifier).updateTrim(
+                ref.read(videoDraftsProvider.notifier).updateTrim(
                       startMs: startMs,
                       endMs: endMs,
                     );
@@ -289,7 +294,7 @@ class _VideoEditorPageState extends ConsumerState<VideoEditorPage> {
               ),
               onChanged: (value) {
                 final ms = (value * 1000).round();
-                ref.read(videoTimelineProvider.notifier).setCoverTime(ms);
+                ref.read(videoDraftsProvider.notifier).setCoverTime(ms);
                 readyController!.seekTo(Duration(milliseconds: ms));
                 setState(() {});
               },
@@ -332,7 +337,10 @@ class _VideoEditorPageState extends ConsumerState<VideoEditorPage> {
           ),
           const SizedBox(height: 16),
           ElevatedButton(
-            onPressed: () => context.goNamed(VideoPostPage.routeName),
+            onPressed: () => context.goNamed(
+              VideoPostPage.routeName,
+              extra: draft.id,
+            ),
             child: const Text('Continue'),
           ),
         ],

@@ -37,8 +37,8 @@ final goRouterProvider = Provider<GoRouter>((ref) {
     navigatorKey: _rootNavigatorKey,
     initialLocation: '/auth',
     debugLogDiagnostics: false,
-    refreshListenable:
-        GoRouterRefreshStream(ref.watch(authControllerProvider.notifier).stream),
+    refreshListenable: GoRouterRefreshStream(
+        ref.watch(authControllerProvider.notifier).stream),
     redirect: (context, state) {
       final loggingIn = state.matchedLocation == '/auth';
       final viewingAdmin = state.matchedLocation == '/admin';
@@ -138,12 +138,20 @@ final goRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: 'editor',
             name: VideoEditorPage.routeName,
-            builder: (context, state) => const VideoEditorPage(),
+            builder: (context, state) {
+              final draftId =
+                  state.extra is String ? state.extra as String : null;
+              return VideoEditorPage(draftId: draftId);
+            },
           ),
           GoRoute(
             path: 'post',
             name: VideoPostPage.routeName,
-            builder: (context, state) => const VideoPostPage(),
+            builder: (context, state) {
+              final draftId =
+                  state.extra is String ? state.extra as String : null;
+              return VideoPostPage(draftId: draftId);
+            },
           ),
         ],
       ),
