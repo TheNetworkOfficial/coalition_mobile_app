@@ -21,6 +21,18 @@ class VideoPermissionResult {
   final bool permanentlyDenied;
 }
 
+class VideoPermissionException implements Exception {
+  VideoPermissionException(this.message, {this.cause});
+
+  final String message;
+  final Object? cause;
+
+  @override
+  String toString() {
+    return 'VideoPermissionException($message)';
+  }
+}
+
 class VideoPermissionService {
   bool _launchRequestScheduled = false;
 
@@ -41,7 +53,7 @@ class VideoPermissionService {
           granted: true, permanentlyDenied: false);
     }
 
-    final statuses = await _currentStatuses();
+    final statuses = await _runPermissionQuery(_currentStatuses);
     if (_anyGranted(statuses)) {
       return const VideoPermissionResult(
           granted: true, permanentlyDenied: false);
@@ -54,7 +66,7 @@ class VideoPermissionService {
           granted: false, permanentlyDenied: permanentlyDenied);
     }
 
-    final requested = await _requestPermissions();
+    final requested = await _runPermissionQuery(_requestPermissions);
     if (_anyGranted(requested)) {
       return const VideoPermissionResult(
           granted: true, permanentlyDenied: false);
@@ -89,14 +101,9 @@ class VideoPermissionService {
     if (permissions.isEmpty) {
       return const <PermissionStatus>[];
     }
-    try {
-      final futures = permissions.map((permission) => permission.status);
-      return await Future.wait(futures);
-    } on MissingPluginException catch (_) {
-      return const <PermissionStatus>[PermissionStatus.granted];
-    } on PlatformException catch (_) {
-      return const <PermissionStatus>[PermissionStatus.granted];
-    }
+
+    final futures = permissions.map((permission) => permission.status);
+    return Future.wait(futures);
   }
 
   Future<List<PermissionStatus>> _requestPermissions() async {
@@ -104,16 +111,35 @@ class VideoPermissionService {
     if (permissions.isEmpty) {
       return const <PermissionStatus>[];
     }
+
+    final results = await permissions.request();
+    return permissions
+        .map((permission) => results[permission] ?? PermissionStatus.denied)
+        .toList();
+  }
+
+  Future<List<PermissionStatus>> _runPermissionQuery(
+      Future<List<PermissionStatus>> Function() callback) async {
     try {
-      final results = await permissions.request();
-      return permissions
-          .map((permission) => results[permission] ?? PermissionStatus.denied)
-          .toList();
-    } on MissingPluginException catch (_) {
-      return const <PermissionStatus>[PermissionStatus.granted];
-    } on PlatformException catch (_) {
-      return const <PermissionStatus>[PermissionStatus.granted];
+      return await callback();
+    } on MissingPluginException catch (error, stackTrace) {
+      _throwPermissionError(error, stackTrace);
+    } on PlatformException catch (error, stackTrace) {
+      _throwPermissionError(error, stackTrace);
     }
+
+    throw StateError('Video permission query failed without an error.');
+  }
+
+  Never _throwPermissionError(Object error, StackTrace stackTrace) {
+    final message =
+        error is PlatformException && error.message != null && error.message!.isNotEmpty
+            ? error.message!
+            : 'Unable to verify video permissions. Please try again later.';
+    Error.throwWithStackTrace(
+      VideoPermissionException(message, cause: error),
+      stackTrace,
+    );
   }
 
   bool _anyGranted(List<PermissionStatus> statuses) {
