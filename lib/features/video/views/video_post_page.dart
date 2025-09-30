@@ -12,9 +12,11 @@ import '../providers/video_timeline_provider.dart';
 import '../services/mux_upload_service.dart';
 
 class VideoPostPage extends ConsumerStatefulWidget {
-  const VideoPostPage({super.key});
+  const VideoPostPage({super.key, this.httpClientOverride});
 
   static const routeName = 'video-post';
+
+  final http.Client? httpClientOverride;
 
   @override
   ConsumerState<VideoPostPage> createState() => _VideoPostPageState();
@@ -39,7 +41,7 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
   @override
   void initState() {
     super.initState();
-    _httpClient = http.Client();
+    _httpClient = widget.httpClientOverride ?? http.Client();
   }
 
   @override
@@ -159,14 +161,23 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
         _stage = _PostStage.idle;
         _uploadProgress = 0;
         _uploadFailed = uploadAttempted || postAttempted;
-        if (_uploadFailed && _currentTicket != null && !_currentTicket!.isTus && !_uploadCompleted) {
+        if (_uploadFailed &&
+            _currentTicket != null &&
+            !_currentTicket!.isTus &&
+            !_uploadCompleted) {
           _currentTicket = null;
         }
-        _errorMessage =
-            _messageForError(uploadAttempted: uploadAttempted, postAttempted: postAttempted, isTusTicket: isTusTicket);
+        _errorMessage = _messageForError(
+            uploadAttempted: uploadAttempted,
+            postAttempted: postAttempted,
+            isTusTicket: isTusTicket);
       });
     }
   }
+
+  @visibleForTesting
+  Future<void> startMuxPostFlowForTesting(VideoTimeline timeline) =>
+      _startMuxPostFlow(timeline);
 
   String _messageForError({
     required bool uploadAttempted,
@@ -191,7 +202,8 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
     }
 
     final timelineJson = _buildTimelineJson(timeline);
-    final exportedPath = await VideoNative.exportEdits(
+    final native = ref.read(videoNativeProvider);
+    final exportedPath = await native.exportEdits(
       filePath: timeline.sourcePath,
       timelineJson: timelineJson,
       targetBitrateBps: 6_000_000,
@@ -217,7 +229,8 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
     }
 
     final seconds = (timeline.coverTimeMs ?? 0) / 1000;
-    final coverPath = await VideoNative.generateCoverImage(
+    final native = ref.read(videoNativeProvider);
+    final coverPath = await native.generateCoverImage(
       timeline.sourcePath,
       seconds: seconds,
     );
@@ -263,8 +276,10 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
     }
 
     final payload = jsonDecode(response.body) as Map<String, dynamic>;
-    final uploadUrl = payload['put_url'] ?? payload['upload_url'] ?? payload['url'];
-    final assetUrl = payload['asset_url'] ?? payload['cover_url'] ?? payload['public_url'];
+    final uploadUrl =
+        payload['put_url'] ?? payload['upload_url'] ?? payload['url'];
+    final assetUrl =
+        payload['asset_url'] ?? payload['cover_url'] ?? payload['public_url'];
     final headers = payload['headers'];
 
     if (uploadUrl is! String || assetUrl is! String) {
@@ -326,7 +341,7 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
               return;
             }
             setState(() {
-              _uploadProgress = total <= 0 ? 0 : (sent / total).clamp(0, 1);
+              _uploadProgress = total <= 0 ? 0 : (sent / total).clamp(0.0, 1.0);
             });
           },
         );
@@ -410,7 +425,8 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
       case _PostStage.exporting:
         return 'Exporting video…';
       case _PostStage.uploading:
-        final percent = (_uploadProgress * 100).clamp(0, 100).toStringAsFixed(0);
+        final percent =
+            (_uploadProgress * 100).clamp(0.0, 100.0).toStringAsFixed(0);
         return _uploadProgress > 0
             ? 'Uploading video… $percent%'
             : 'Uploading video…';
@@ -434,7 +450,9 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
           if (_uploadCompleted) {
             return 'Retry';
           }
-          return _currentTicket?.isTus == true ? 'Resume upload' : 'Retry upload';
+          return _currentTicket?.isTus == true
+              ? 'Resume upload'
+              : 'Retry upload';
         }
         return 'Post';
     }
@@ -443,11 +461,11 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
   @override
   Widget build(BuildContext context) {
     final timeline = ref.watch(videoTimelineProvider);
-    final isBusy =
-        _stage == _PostStage.exporting || _stage == _PostStage.uploading || _stage == _PostStage.processing;
-    final double? progressValue = _stage == _PostStage.uploading
-        ? (_uploadProgress.clamp(0.0, 1.0) as double)
-        : null;
+    final isBusy = _stage == _PostStage.exporting ||
+        _stage == _PostStage.uploading ||
+        _stage == _PostStage.processing;
+    final double? progressValue =
+        _stage == _PostStage.uploading ? _uploadProgress.clamp(0.0, 1.0) : null;
     final buttonLabel = _primaryButtonLabel();
     final VoidCallback? buttonOnPressed =
         timeline == null || isBusy ? null : () => _onPostPressed(timeline);

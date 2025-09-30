@@ -1,13 +1,19 @@
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class VideoNative {
-  static const _ch = MethodChannel('video_native');
+final videoNativeProvider =
+    Provider<VideoNativeBridge>((_) => const VideoNativeBridge());
 
-  static Future<String> generateCoverImage(
+class VideoNativeBridge {
+  const VideoNativeBridge();
+
+  static const MethodChannel _channel = MethodChannel('video_native');
+
+  Future<String> generateCoverImage(
     String filePath, {
     required double seconds,
   }) async {
-    final result = await _ch.invokeMethod<String>(
+    final result = await _channel.invokeMethod<String>(
       'generateCoverImage',
       <String, dynamic>{
         'filePath': filePath,
@@ -17,12 +23,12 @@ class VideoNative {
     return result!;
   }
 
-  static Future<String> exportEdits({
+  Future<String> exportEdits({
     required String filePath,
     required Map<String, dynamic> timelineJson,
     required int targetBitrateBps,
   }) async {
-    final result = await _ch.invokeMethod<String>(
+    final result = await _channel.invokeMethod<String>(
       'exportEdits',
       <String, dynamic>{
         'filePath': filePath,
@@ -33,7 +39,7 @@ class VideoNative {
     return result!;
   }
 
-  static Future<void> cancelExport() {
-    return _ch.invokeMethod<void>('cancelExport');
+  Future<void> cancelExport() {
+    return _channel.invokeMethod<void>('cancelExport');
   }
 }

@@ -26,6 +26,7 @@ class _VideoCardState extends State<VideoCard>
   VideoPlayerController? _controller;
   bool _showPoster = true;
   bool _isBuffering = true;
+  bool _initializationFailed = false;
 
   @override
   void initState() {
@@ -98,6 +99,23 @@ class _VideoCardState extends State<VideoCard>
                       child: CircularProgressIndicator.adaptive(),
                     ),
                   ),
+                if (_initializationFailed)
+                  Center(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Padding(
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        child: Text(
+                          'Video unavailable',
+                          style: TextStyle(color: Colors.white, fontSize: 12),
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -121,9 +139,9 @@ class _VideoCardState extends State<VideoCard>
                 child: Text(
                   widget.caption,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                      ) ??
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ) ??
                       const TextStyle(
                         color: Colors.white,
                         fontSize: 16,
@@ -151,30 +169,45 @@ class _VideoCardState extends State<VideoCard>
       _controller = null;
       _showPoster = true;
       _isBuffering = true;
+      _initializationFailed = false;
     });
 
     final controller = VideoPlayerController.networkUrl(
       Uri.parse(widget.playbackUrl),
-      videoPlayerOptions: const VideoPlayerOptions(mixWithOthers: true),
+      videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
     );
 
-    await controller.initialize();
-    await controller.setVolume(0);
-    await controller.setLooping(true);
-    controller.addListener(_handleControllerUpdate);
+    try {
+      await controller.initialize();
+      await controller.setVolume(0);
+      await controller.setLooping(true);
+      controller.addListener(_handleControllerUpdate);
 
-    if (!mounted) {
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
+
+      setState(() {
+        _controller = controller;
+        _updatePosterState(controller.value);
+      });
+
+      if (widget.isActive) {
+        await controller.play();
+      }
+    } catch (error, stackTrace) {
+      debugPrint('VideoCard failed to initialize: $error\n$stackTrace');
       await controller.dispose();
-      return;
-    }
-
-    setState(() {
-      _controller = controller;
-      _updatePosterState(controller.value);
-    });
-
-    if (widget.isActive) {
-      await controller.play();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _controller = null;
+        _initializationFailed = true;
+        _isBuffering = false;
+        _showPoster = true;
+      });
     }
   }
 

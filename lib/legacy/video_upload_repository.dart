@@ -1,3 +1,6 @@
+// Legacy AWS/S3 upload path preserved for reference. New video flows should use
+// features/video/services/mux_upload_service.dart instead.
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -5,8 +8,8 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
-import '../../config/backend_config_loader.dart';
-import '../../config/backend_config_provider.dart';
+import '../core/config/backend_config_loader.dart';
+import '../core/config/backend_config_provider.dart';
 
 final videoUploadRepositoryProvider = Provider<VideoUploadRepository>((ref) {
   final config = ref.watch(backendConfigProvider);
@@ -52,7 +55,7 @@ class VideoUploadRepository {
     await _uploadToSignedUrl(target: videoTarget, file: video);
     uploaded[VideoUploadAssetType.video] = videoTarget;
 
-    if (includeCover && coverFile != null) {
+    if (includeCover) {
       final coverTarget = session.targetFor(VideoUploadAssetType.cover);
       if (coverTarget == null) {
         throw HttpException('Upload session missing cover target.',

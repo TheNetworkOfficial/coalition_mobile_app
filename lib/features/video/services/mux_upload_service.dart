@@ -4,7 +4,6 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
-import 'package:tus_client/tus_client.dart';
 
 import '../../../core/config/backend_config_loader.dart';
 import '../../../core/config/backend_config_provider.dart';
@@ -81,6 +80,9 @@ class MuxUploadServiceHttp implements MuxUploadService {
 
   final http.Client _client;
   final BackendConfig _config;
+  static const Duration _httpTimeout = Duration(seconds: 5);
+
+  static const _kTusResumableVersion = '1.0.0';
 
   Uri get _muxBaseUri => _ensureTrailingSlash(_config.baseUri).resolve('mux/');
 
@@ -98,11 +100,13 @@ class MuxUploadServiceHttp implements MuxUploadService {
       contentType: contentType,
       preferTus: preferTus,
     );
-    final response = await _client.post(
+    final response = await _client
+        .post(
       uri,
       headers: const {'content-type': 'application/json'},
       body: jsonEncode(requestDto.toJson()),
-    );
+    )
+        .timeout(_httpTimeout);
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw HttpException(
@@ -138,20 +142,13 @@ class MuxUploadServiceHttp implements MuxUploadService {
     ProgressCallback? onProgress,
   }) async {
     if (ticket.isTus) {
-      final tusUrl = ticket.tusUrl;
-      if (tusUrl == null) {
-        throw StateError('Ticket marked as tus but missing endpoint.');
-      }
-      final client = TusClient(
-        tusUrl.toString(),
-        headers: ticket.tusHeaders,
-      );
-      final upload = await client.createOrResumeUpload(mp4);
-      upload.onProgress = (sent, total) => onProgress?.call(sent, total);
-      await client.upload(upload);
       return MuxUploadResult(
         uploadId: ticket.uploadId,
-        bytesSent: await mp4.length(),
+        bytesSent: await _uploadViaTus(
+          ticket: ticket,
+          mp4: mp4,
+          onProgress: onProgress,
+        ),
       );
     }
 
@@ -189,7 +186,7 @@ class MuxUploadServiceHttp implements MuxUploadService {
     );
 
     try {
-      final responseFuture = _client.send(request);
+      final responseFuture = _client.send(request).timeout(_httpTimeout);
       await completer.future;
       final response = await responseFuture;
       await response.stream.drain();
@@ -207,6 +204,113 @@ class MuxUploadServiceHttp implements MuxUploadService {
       uploadId: ticket.uploadId,
       bytesSent: totalBytes,
     );
+  }
+
+  Future<int> _uploadViaTus({
+    required MuxUploadTicket ticket,
+    required File mp4,
+    ProgressCallback? onProgress,
+  }) async {
+    final tusUrl = ticket.tusUrl;
+    if (tusUrl == null) {
+      throw StateError('Ticket marked as tus but missing endpoint.');
+    }
+
+    final totalBytes = await mp4.length();
+    final headers = _mergeTusHeaders(ticket.tusHeaders);
+    final initialOffset = await _fetchTusOffset(tusUrl, headers);
+    if (initialOffset >= totalBytes) {
+      onProgress?.call(totalBytes, totalBytes);
+      return totalBytes;
+    }
+
+    if (initialOffset > 0) {
+      onProgress?.call(initialOffset, totalBytes);
+    }
+
+    final request = http.StreamedRequest('PATCH', tusUrl)
+      ..headers.addAll(headers)
+      ..headers['Upload-Offset'] = initialOffset.toString()
+      ..headers['Content-Type'] = 'application/offset+octet-stream'
+      ..contentLength = totalBytes - initialOffset;
+
+    final completer = Completer<void>();
+    var sentBytes = initialOffset;
+    final subscription = mp4.openRead(initialOffset).listen(
+      (chunk) {
+        request.sink.add(chunk);
+        sentBytes += chunk.length;
+        onProgress?.call(sentBytes, totalBytes);
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        request.sink.close();
+        if (!completer.isCompleted) {
+          completer.completeError(error, stackTrace);
+        }
+      },
+      onDone: () {
+        request.sink.close();
+        if (!completer.isCompleted) {
+          completer.complete();
+        }
+      },
+      cancelOnError: true,
+    );
+
+    http.StreamedResponse response;
+    try {
+      final responseFuture = _client.send(request).timeout(_httpTimeout);
+      await completer.future;
+      response = await responseFuture;
+    } finally {
+      await subscription.cancel();
+    }
+
+    await response.stream.drain();
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw HttpException(
+        'Mux tus upload failed: ${response.statusCode} ${response.reasonPhrase}',
+        uri: tusUrl,
+      );
+    }
+
+    final offsetHeader = response.headers['upload-offset'];
+    final reportedOffset = offsetHeader != null ? int.tryParse(offsetHeader) : null;
+    return reportedOffset ?? sentBytes;
+  }
+
+  Future<int> _fetchTusOffset(Uri tusUrl, Map<String, String> headers) async {
+    final merged = Map<String, String>.from(headers);
+    merged['Tus-Resumable'] = _kTusResumableVersion;
+
+    http.Response response;
+    try {
+      response = await _client
+          .head(tusUrl, headers: merged)
+          .timeout(_httpTimeout);
+    } on SocketException {
+      return 0;
+    }
+
+    if (response.statusCode == 404 || response.statusCode == 405) {
+      return 0;
+    }
+
+    if (response.statusCode >= 400) {
+      throw HttpException(
+        'Failed to query tus upload offset: ${response.statusCode} ${response.reasonPhrase}',
+        uri: tusUrl,
+      );
+    }
+
+    final offsetHeader = response.headers['upload-offset'];
+    return offsetHeader != null ? int.tryParse(offsetHeader) ?? 0 : 0;
+  }
+
+  Map<String, String> _mergeTusHeaders(Map<String, String> base) {
+    final merged = Map<String, String>.from(base);
+    merged['Tus-Resumable'] = _kTusResumableVersion;
+    return merged;
   }
 
   Uri _ensureTrailingSlash(Uri uri) {

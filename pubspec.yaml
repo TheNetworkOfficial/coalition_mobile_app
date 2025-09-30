@@ -3,7 +3,7 @@ description: Mobile coalition app for candidate discovery, events, and admin too
 publish_to: 'none'
 
 environment:
-  sdk: '>=3.3.0 <4.0.0'
+  sdk: '>=3.6.0 <4.0.0'
 
 
 dependencies:
@@ -19,16 +19,18 @@ dependencies:
   google_sign_in: ^7.2.0
   shared_preferences: ^2.2.3
   crypto: ^3.0.3
-  image_picker: ^1.0.7
-  video_player: ^2.8.2
-  video_thumbnail: ^0.5.3
+  image_picker: ^1.1.1
+  video_player: ^2.9.1
   photo_manager: ^3.7.1
   flutter_cache_manager: ^3.3.1
   connectivity_plus: ^7.0.0
   http: ^1.2.2
-  tus_client: ^2.0.0
-  video_compress: ^3.1.3
   mime: ^1.0.6
+  permission_handler: ^11.3.0
+  path_provider: ^2.1.2
+  collection: ^1.18.0
+  tusc: ^2.1.0
+  path: ^1.9.0
 
 dev_dependencies:
   flutter_test:

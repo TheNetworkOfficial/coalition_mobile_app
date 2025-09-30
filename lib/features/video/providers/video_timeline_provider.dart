@@ -67,7 +67,8 @@ class VideoTimelineNotifier extends Notifier<VideoTimeline?> {
       return;
     }
 
-    final coverPath = await VideoNative.generateCoverImage(
+    final native = ref.read(videoNativeProvider);
+    final coverPath = await native.generateCoverImage(
       filePath,
       seconds: timeMs / 1000,
     );

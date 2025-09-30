@@ -45,8 +45,6 @@
         <string>Allow access to your photo library to pick and edit videos.</string>
         <key>NSCameraUsageDescription</key>
         <string>Allow camera access to record videos.</string>
-        <key>NSPhotoLibraryAddUsageDescription</key>
-        <string>Photo access is required to add content from your library to your creations.</string>
         <key>CADisableMinimumFrameDurationOnPhone</key>
         <true/>
         <key>UIApplicationSupportsIndirectInputEvents</key>

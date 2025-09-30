@@ -11,6 +11,8 @@ import 'package:video_player/video_player.dart';
 
 import 'video_track.dart';
 
+const bool _kStoryboardsEnabled = false;
+
 /// High level video widget that provides:
 ///
 /// * automatic fallback between multiple renditions
@@ -226,6 +228,13 @@ class _AdaptiveVideoPlayerState extends State<AdaptiveVideoPlayer> {
   }
 
   void _loadStoryboardIfNeeded() {
+    if (!_kStoryboardsEnabled) {
+      if (_storyboard != null) {
+        setState(() => _storyboard = null);
+      }
+      return;
+    }
+
     if (!widget.showControls) {
       if (_storyboard != null) {
         setState(() => _storyboard = null);
@@ -848,7 +857,6 @@ class _ScrubSliderState extends State<_ScrubSlider> {
 
         Widget? previewWidget;
         double previewWidth = 0;
-        double previewHeight = 0;
         if (_isDragging && widget.storyboard != null && _previewCue != null) {
           final cue = _previewCue!;
           final tileSize = cue.tileSize;
@@ -859,7 +867,6 @@ class _ScrubSliderState extends State<_ScrubSlider> {
               scale = maxPreviewWidth / tileSize.width;
             }
             previewWidth = tileSize.width * scale;
-            previewHeight = tileSize.height * scale;
             previewWidget = _StoryboardPreview(
               cue: cue,
               scale: scale,

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/routing/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_controller.dart';
+import 'features/video/services/video_permission_service.dart';
 
 class CoalitionApp extends ConsumerWidget {
   const CoalitionApp({super.key});
@@ -13,6 +14,7 @@ class CoalitionApp extends ConsumerWidget {
     final router = ref.watch(goRouterProvider);
 
     final themeMode = ref.watch(themeControllerProvider);
+    ref.watch(videoPermissionServiceProvider);
 
     return MaterialApp.router(
       debugShowCheckedModeBanner: false,

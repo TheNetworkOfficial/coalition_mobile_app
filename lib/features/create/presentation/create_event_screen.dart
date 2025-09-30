@@ -6,7 +6,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
 import 'package:video_player/video_player.dart';
 
-import 'package:coalition_mobile_app/core/utils/media_type_utils.dart';
 
 import '../../auth/data/auth_controller.dart';
 import '../../auth/domain/app_user.dart';
@@ -633,16 +632,10 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
   }
 
   Future<void> _pickVideo() async {
-    try {
-      final file = await _picker.pickVideo(
-        source: ImageSource.gallery,
-        maxDuration: const Duration(minutes: 7),
-      );
-      if (file == null) return;
-      await _setMedia(file, FeedMediaType.video);
-    } on PlatformException catch (error) {
-      _showError('We could not access your gallery (${error.message}).');
-    }
+    _showError(
+      'Event videos now publish through the new video creator (/create/video). '
+      'Export your clip there before attaching it to an event.',
+    );
   }
 
   Future<void> _setMedia(XFile file, FeedMediaType type) async {
@@ -846,7 +839,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
 
     final customCoverPath = result.customCoverPath;
     if (customCoverPath != null) {
-      if (!isLikelyImageSource(customCoverPath)) {
+      if (!_isLikelyImageSource(customCoverPath)) {
         _showError('Please choose an image file for the cover.');
       } else {
         setState(() {
@@ -872,7 +865,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                   position: result.framePosition!,
                 );
         if (!mounted) return;
-        if (!isLikelyImageSource(generated)) {
+        if (!_isLikelyImageSource(generated)) {
           _showError('The selected frame is not a supported image.');
         } else {
           setState(() {
@@ -1077,6 +1070,18 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
         setState(() => _isSubmitting = false);
       }
     }
+  }
+
+
+  bool _isLikelyImageSource(String path) {
+    final lower = path.toLowerCase();
+    return lower.startsWith('http://') ||
+        lower.startsWith('https://') ||
+        lower.startsWith('file://') ||
+        lower.endsWith('.png') ||
+        lower.endsWith('.jpg') ||
+        lower.endsWith('.jpeg') ||
+        lower.endsWith('.webp');
   }
 
   void _showError(String message) {

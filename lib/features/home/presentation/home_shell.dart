@@ -132,7 +132,7 @@ class HomeShell extends ConsumerWidget {
                   ),
                   title: Text(
                     action == _CreateAction.post
-                        ? 'Create post'
+                        ? 'Create video post'
                         : 'Create event',
                   ),
                   onTap: () {
@@ -150,7 +150,7 @@ class HomeShell extends ConsumerWidget {
       }
       switch (action) {
         case _CreateAction.post:
-          context.push('/create/post');
+          context.push('/create/video');
           break;
         case _CreateAction.event:
           context.push('/create/event');

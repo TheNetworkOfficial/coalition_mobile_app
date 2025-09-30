@@ -48,6 +48,55 @@ class VideoTimeline {
   /// Cached path to the generated PNG cover image on disk.
   final String? coverImagePath;
 
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'sourcePath': sourcePath,
+        if (trimStartMs != null) 'trimStartMs': trimStartMs,
+        if (trimEndMs != null) 'trimEndMs': trimEndMs,
+        if (cropRect != null)
+          'cropRect': <String, double>{
+            'left': cropRect!.left,
+            'top': cropRect!.top,
+            'right': cropRect!.right,
+            'bottom': cropRect!.bottom,
+          },
+        if (filterId != null) 'filterId': filterId,
+        'playbackSpeed': playbackSpeed,
+        'overlayItems': overlayItems.map((item) => item.toJson()).toList(),
+        if (coverTimeMs != null) 'coverTimeMs': coverTimeMs,
+        if (coverImagePath != null) 'coverImagePath': coverImagePath,
+      };
+
+  factory VideoTimeline.fromJson(Map<String, dynamic> json) {
+    final crop = json['cropRect'];
+    Rect? rect;
+    if (crop is Map<String, dynamic>) {
+      rect = Rect.fromLTRB(
+        (crop['left'] as num).toDouble(),
+        (crop['top'] as num).toDouble(),
+        (crop['right'] as num).toDouble(),
+        (crop['bottom'] as num).toDouble(),
+      );
+    }
+    final overlaysJson = json['overlayItems'];
+    final overlays = overlaysJson is List
+        ? overlaysJson
+            .whereType<Map<String, dynamic>>()
+            .map(VideoOverlayItem.fromJson)
+            .toList(growable: false)
+        : const <VideoOverlayItem>[];
+    return VideoTimeline(
+      sourcePath: json['sourcePath'] as String,
+      trimStartMs: (json['trimStartMs'] as num?)?.toInt(),
+      trimEndMs: (json['trimEndMs'] as num?)?.toInt(),
+      cropRect: rect,
+      filterId: json['filterId'] as String?,
+      playbackSpeed: (json['playbackSpeed'] as num?)?.toDouble() ?? 1.0,
+      overlayItems: overlays,
+      coverTimeMs: (json['coverTimeMs'] as num?)?.toInt(),
+      coverImagePath: json['coverImagePath'] as String?,
+    );
+  }
   VideoTimeline copyWith({
     String? sourcePath,
     int? trimStartMs,
@@ -87,6 +136,17 @@ class VideoOverlayItem {
 
   /// Optional developer-friendly label.
   final String? label;
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'id': id,
+        if (label != null) 'label': label,
+      };
+
+  factory VideoOverlayItem.fromJson(Map<String, dynamic> json) =>
+      VideoOverlayItem(
+        id: json['id'] as String,
+        label: json['label'] as String?,
+      );
 }
 
 const Object _unset = Object();

@@ -3,21 +3,21 @@ package com.example.coalition_mobile_app
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.ColorMatrix
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
-import androidx.media3.common.ClippingConfiguration
+import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.effect.ColorFilter
 import androidx.media3.effect.Crop
-import androidx.media3.effect.Effect
 import androidx.media3.effect.ScaleAndRotateTransformation
+import androidx.media3.effect.SingleColorLut
 import androidx.media3.transformer.DefaultEncoderFactory
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.Effects
+import androidx.media3.transformer.TransformationException
+import androidx.media3.transformer.TransformationResult
 import androidx.media3.transformer.Transformer
 import androidx.media3.transformer.VideoEncoderSettings
 import io.flutter.plugin.common.BinaryMessenger
@@ -171,13 +171,27 @@ class VideoNative(
         var exportError: Exception? = null
 
         val listener = object : Transformer.Listener {
-            override fun onCompleted(transformationResult: Transformer.TransformationResult) {
+            override fun onTransformationCompleted(
+                mediaItem: MediaItem,
+                transformationResult: TransformationResult,
+            ) {
                 latch.countDown()
             }
 
-            override fun onError(exception: Exception) {
+            override fun onTransformationError(
+                mediaItem: MediaItem,
+                exception: TransformationException,
+            ) {
                 exportError = exception
                 latch.countDown()
+            }
+
+            override fun onTransformationError(
+                mediaItem: MediaItem,
+                transformationResult: TransformationResult,
+                exception: TransformationException,
+            ) {
+                onTransformationError(mediaItem, exception)
             }
         }
 
@@ -222,15 +236,22 @@ class VideoNative(
         filePath: String,
         timeline: Map<String, Any?>,
     ): EditedMediaItem {
-        val mediaItem = MediaItem.fromUri(Uri.fromFile(File(filePath)))
-        val builder = EditedMediaItem.Builder(mediaItem)
+        val mediaItemBuilder = MediaItem.Builder().setUri(Uri.fromFile(File(filePath)))
 
-        (timeline["trim"] as? Map<*, *>)?.let { trim ->
-            val clipBuilder = ClippingConfiguration.Builder()
-            (trim["startSeconds"] as? Number)?.let { clipBuilder.setStartPositionMs((it.toDouble() * 1000).toLong()) }
-            (trim["endSeconds"] as? Number)?.let { clipBuilder.setEndPositionMs((it.toDouble() * 1000).toLong()) }
-            builder.setClippingConfiguration(clipBuilder.build())
+        val trimMap = timeline["trim"] as? Map<*, *>
+        if (trimMap != null) {
+            val clipBuilder = MediaItem.ClippingConfiguration.Builder()
+            (trimMap["startSeconds"] as? Number)?.let {
+                clipBuilder.setStartPositionMs((it.toDouble() * 1000).toLong())
+            }
+            (trimMap["endSeconds"] as? Number)?.let {
+                clipBuilder.setEndPositionMs((it.toDouble() * 1000).toLong())
+            }
+            mediaItemBuilder.setClippingConfiguration(clipBuilder.build())
         }
+
+        val mediaItem = mediaItemBuilder.build()
+        val builder = EditedMediaItem.Builder(mediaItem)
 
         val videoEffects = mutableListOf<Effect>()
 
@@ -274,15 +295,6 @@ class VideoNative(
         val map = raw as? Map<*, *> ?: return null
         val type = map["type"] as? String ?: return null
         return when (type) {
-            "colorFilter" -> {
-                val values = (map["matrix"] as? List<*>)?.mapNotNull { (it as? Number)?.toFloat() }
-                if (values == null || values.size != 20) {
-                    null
-                } else {
-                    val matrixArray = FloatArray(20) { index -> values[index] }
-                    ColorFilter(ColorMatrix(matrixArray))
-                }
-            }
             "lut" -> buildLutEffect(map)
             else -> null
         }
@@ -296,8 +308,14 @@ class VideoNative(
         val depth = (map["depth"] as? Number)?.toInt() ?: return null
         val bitmap = BitmapFactory.decodeFile(path) ?: return null
         return try {
-            androidx.media3.effect.Lut(bitmap, width, height, depth)
+            if (width <= 0 || height <= 0 || depth <= 0) {
+                bitmap.recycle()
+                null
+            } else {
+                SingleColorLut.createFromBitmap(bitmap).also { bitmap.recycle() }
+            }
         } catch (_: Exception) {
+            bitmap.recycle()
             null
         }
     }
