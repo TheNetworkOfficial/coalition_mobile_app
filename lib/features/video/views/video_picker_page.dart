@@ -25,7 +25,21 @@ class VideoPickerPage extends ConsumerWidget {
         child: ElevatedButton(
           onPressed: () async {
             final permissionService = ref.read(videoPermissionServiceProvider);
-            final permissionResult = await permissionService.ensureGranted();
+            VideoPermissionResult permissionResult;
+            try {
+              permissionResult = await permissionService.ensureGranted();
+            } on VideoPermissionException catch (error) {
+              if (!context.mounted) {
+                return;
+              }
+              final message = error.message.isNotEmpty
+                  ? error.message
+                  : 'Unable to verify video permissions. Please try again later.';
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(message)),
+              );
+              return;
+            }
             if (!permissionResult.granted) {
               if (!context.mounted) {
                 return;
