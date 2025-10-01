@@ -8,7 +8,7 @@ abstract class VideoNativeBridge {
 
   Future<String> generateCoverImage(String filePath, {required double seconds});
 
-  Future<void> persistUriPermission(String uri);
+  Future<void> persistUriPermission(String uri, {int intentFlags = 0});
 
   Future<String> exportEdits({
     required String filePath,
@@ -39,9 +39,10 @@ class VideoNative implements VideoNativeBridge {
   }
 
   @override
-  Future<void> persistUriPermission(String uri) async {
+  Future<void> persistUriPermission(String uri, {int intentFlags = 0}) async {
     await _ch.invokeMethod<void>('persistUriPermission', {
       'uri': uri,
+      'flags': intentFlags,
     });
   }
 

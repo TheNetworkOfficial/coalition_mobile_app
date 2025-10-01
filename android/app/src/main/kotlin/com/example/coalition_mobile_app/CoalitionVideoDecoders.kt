@@ -1,0 +1,74 @@
+package com.example.coalition_mobile_app
+
+import android.content.Context
+import android.graphics.Bitmap
+import android.os.ParcelFileDescriptor
+import com.bumptech.glide.Glide
+import com.bumptech.glide.Registry
+import com.bumptech.glide.load.Options
+import com.bumptech.glide.load.ResourceDecoder
+import com.bumptech.glide.load.engine.Resource
+import com.bumptech.glide.load.engine.bitmap_recycle.BitmapPool
+import com.bumptech.glide.load.resource.bitmap.BitmapResource
+import com.bumptech.glide.load.resource.bitmap.VideoDecoder
+import java.io.IOException
+import kotlin.math.max
+import kotlin.math.min
+
+private const val DEFAULT_FRAME_TIME_US = 1_000_000L
+private const val DEFAULT_TARGET_SIZE = 320
+private const val TAG = "CoalitionVideoDecoder"
+
+internal class CoalitionParcelFileDescriptorVideoDecoder(
+    context: Context,
+    private val bitmapPool: BitmapPool,
+) : ResourceDecoder<ParcelFileDescriptor, Bitmap> {
+
+    private val extractor = VideoFrameExtractor.getInstance(context)
+
+    override fun handles(data: ParcelFileDescriptor, options: Options): Boolean = true
+
+    override fun decode(
+        data: ParcelFileDescriptor,
+        outWidth: Int,
+        outHeight: Int,
+        options: Options,
+    ): Resource<Bitmap> {
+        val requestedFrame = options.get(VideoDecoder.TARGET_FRAME) ?: VideoDecoder.DEFAULT_FRAME
+        val frameTimeUs = sanitizeFrameTimeUs(requestedFrame)
+        val targetSize = computeTargetSize(outWidth, outHeight)
+
+        return try {
+            val bitmap = extractor.extractFrameFromFileDescriptor(data, frameTimeUs, targetSize)
+            BitmapResource.obtain(bitmap, bitmapPool)
+                ?: throw IOException("Unable to obtain bitmap resource")
+        } catch (error: Throwable) {
+            android.util.Log.w(TAG, "ParcelFileDescriptor decode failed", error)
+            throw IOException("Unable to decode video frame", error)
+        }
+    }
+
+    private fun sanitizeFrameTimeUs(requested: Long): Long {
+        if (requested == VideoDecoder.DEFAULT_FRAME || requested <= 0L) {
+            return DEFAULT_FRAME_TIME_US
+        }
+        return requested
+    }
+
+    private fun computeTargetSize(outWidth: Int, outHeight: Int): Int {
+        val width = if (outWidth > 0) outWidth else 0
+        val height = if (outHeight > 0) outHeight else 0
+        val largest = max(width, height)
+        return if (largest > 0) {
+            min(largest, DEFAULT_TARGET_SIZE)
+        } else {
+            DEFAULT_TARGET_SIZE
+        }
+    }
+}
+
+internal fun Registry.registerCoalitionVideoDecoders(context: Context, glide: Glide) {
+    val bitmapPool = glide.bitmapPool
+    val parcelDecoder = CoalitionParcelFileDescriptorVideoDecoder(context, bitmapPool)
+    replace(ParcelFileDescriptor::class.java, Bitmap::class.java, parcelDecoder)
+}
