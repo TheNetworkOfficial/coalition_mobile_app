@@ -8,6 +8,8 @@ abstract class VideoNativeBridge {
 
   Future<String> generateCoverImage(String filePath, {required double seconds});
 
+  Future<void> persistUriPermission(String uri);
+
   Future<String> exportEdits({
     required String filePath,
     required Map<String, dynamic> timelineJson,
@@ -34,6 +36,13 @@ class VideoNative implements VideoNativeBridge {
       'seconds': seconds,
     });
     return result ?? '';
+  }
+
+  @override
+  Future<void> persistUriPermission(String uri) async {
+    await _ch.invokeMethod<void>('persistUriPermission', {
+      'uri': uri,
+    });
   }
 
   @override

@@ -14,6 +14,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:wechat_assets_picker/wechat_assets_picker.dart';
 import 'package:wechat_camera_picker/wechat_camera_picker.dart';
 
+import '../platform/video_native.dart';
 import '../services/video_permission_service.dart';
 
 class VideoPickerPage extends ConsumerStatefulWidget {
@@ -246,6 +247,7 @@ class _VideoPickerPageState extends ConsumerState<VideoPickerPage> {
     if (assets == null || assets.isEmpty) {
       return null;
     }
+    await _persistAssetPermission(assets.first);
     return assets.first.file;
   }
 
@@ -289,6 +291,21 @@ class _VideoPickerPageState extends ConsumerState<VideoPickerPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
     );
+  }
+
+  Future<void> _persistAssetPermission(AssetEntity asset) async {
+    if (!Platform.isAndroid) {
+      return;
+    }
+    try {
+      final uri = await asset.getMediaUrl();
+      if (uri == null || !uri.startsWith('content://')) {
+        return;
+      }
+      await ref.read(videoNativeProvider).persistUriPermission(uri);
+    } catch (error, stackTrace) {
+      debugPrint('Failed to persist URI permission for asset: $error\n$stackTrace');
+    }
   }
 }
 
