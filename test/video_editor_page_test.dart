@@ -24,6 +24,9 @@ class _StubVideoNative extends VideoNativeBridge {
   Future<void> cancelExport() async {}
 
   @override
+  Future<void> persistUriPermission(String uri) async {}
+
+  @override
   Future<String> exportEdits({
     required String filePath,
     required Map<String, dynamic> timelineJson,
