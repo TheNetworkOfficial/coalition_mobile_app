@@ -1,6 +1,19 @@
 import 'dart:ui';
 
 class VideoTimeline {
+  static const double _cropEpsilon = 1e-4;
+
+  static bool _hasMeaningfulArea(Rect rect) {
+    return rect.width > _cropEpsilon && rect.height > _cropEpsilon;
+  }
+
+  static bool _isApproximatelyFullFrame(Rect rect) {
+    return rect.left <= _cropEpsilon &&
+        rect.top <= _cropEpsilon &&
+        (1.0 - rect.right) <= _cropEpsilon &&
+        (1.0 - rect.bottom) <= _cropEpsilon;
+  }
+
   final int trimStartMs;
   final int trimEndMs;
   final Rect? cropRect;
@@ -33,16 +46,23 @@ class VideoTimeline {
   }
 
   Map<String, dynamic> toJson() {
+    final crop = cropRect;
+    Map<String, double>? cropPayload;
+    if (crop != null &&
+        _hasMeaningfulArea(crop) &&
+        !_isApproximatelyFullFrame(crop)) {
+      cropPayload = {
+        'left': crop.left,
+        'top': crop.top,
+        'right': crop.right,
+        'bottom': crop.bottom,
+      };
+    }
+
     return {
       'trimStartMs': trimStartMs,
       'trimEndMs': trimEndMs,
-      if (cropRect != null)
-        'cropRect': {
-          'left': cropRect!.left,
-          'top': cropRect!.top,
-          'right': cropRect!.right,
-          'bottom': cropRect!.bottom,
-        },
+      if (cropPayload != null) 'cropRect': cropPayload,
       'speed': speed,
       'coverTimeMs': coverTimeMs,
     };
@@ -51,18 +71,24 @@ class VideoTimeline {
   Map<String, dynamic> toTransformerJson() {
     final trimStartSeconds = trimStartMs / 1000.0;
     final trimEndSeconds = trimEndMs / 1000.0;
+    final crop = cropRect;
+    Map<String, double>? cropPayload;
+    if (crop != null &&
+        _hasMeaningfulArea(crop) &&
+        !_isApproximatelyFullFrame(crop)) {
+      cropPayload = {
+        'left': crop.left,
+        'top': crop.top,
+        'right': crop.right,
+        'bottom': crop.bottom,
+      };
+    }
     return {
       'trim': {
         'startSeconds': trimStartSeconds,
         'endSeconds': trimEndSeconds,
       },
-      if (cropRect != null)
-        'crop': {
-          'left': cropRect!.left,
-          'top': cropRect!.top,
-          'right': cropRect!.right,
-          'bottom': cropRect!.bottom,
-        },
+      if (cropPayload != null) 'crop': cropPayload,
       if (speed != 1.0) 'speed': speed,
     };
   }

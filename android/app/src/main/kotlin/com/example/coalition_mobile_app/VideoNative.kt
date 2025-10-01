@@ -36,6 +36,7 @@ import kotlin.OptIn
 
 private const val CHANNEL_NAME = "video_native"
 private const val TAG = "VideoNative"
+private const val CROP_EPSILON = 1e-4f
 
 class VideoNative(
     private val context: Context,
@@ -310,19 +311,26 @@ class VideoNative(
                 val sanitizedRight = right.coerceIn(0f, 1f)
                 val sanitizedBottom = bottom.coerceIn(0f, 1f)
 
-                val hasValidArea = sanitizedRight > sanitizedLeft && sanitizedBottom > sanitizedTop
+                val width = sanitizedRight - sanitizedLeft
+                val height = sanitizedBottom - sanitizedTop
+                val hasValidArea = width > CROP_EPSILON && height > CROP_EPSILON
+                val isFullFrame =
+                    sanitizedLeft <= CROP_EPSILON &&
+                        sanitizedTop <= CROP_EPSILON &&
+                        (1f - sanitizedRight) <= CROP_EPSILON &&
+                        (1f - sanitizedBottom) <= CROP_EPSILON
 
                 android.util.Log.d(
                     TAG,
-                    "buildEditedMediaItem: crop values left=$sanitizedLeft top=$sanitizedTop right=$sanitizedRight bottom=$sanitizedBottom hasValidArea=$hasValidArea",
+                    "buildEditedMediaItem: crop values left=$sanitizedLeft top=$sanitizedTop right=$sanitizedRight bottom=$sanitizedBottom hasValidArea=$hasValidArea isFullFrame=$isFullFrame",
                 )
 
-                if (hasValidArea) {
+                if (hasValidArea && !isFullFrame) {
                     videoEffects += Crop(sanitizedLeft, sanitizedTop, sanitizedRight, sanitizedBottom)
                 } else {
                     android.util.Log.w(
                         TAG,
-                        "buildEditedMediaItem: Ignoring invalid crop with zero/negative area $crop",
+                        "buildEditedMediaItem: Ignoring crop due to invalid area or full-frame bounds $crop",
                     )
                 }
             } catch (iae: IllegalArgumentException) {
