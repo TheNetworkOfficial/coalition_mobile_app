@@ -77,6 +77,7 @@ class _EventPreviewPlaceholder extends StatelessWidget {
                 .textTheme
                 .bodyMedium
                 ?.copyWith(color: Theme.of(context).colorScheme.onSurface),
+
             textAlign: TextAlign.center,
           ),
         ),
