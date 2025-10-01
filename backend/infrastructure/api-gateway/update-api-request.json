@@ -1,6 +1,0 @@
-{
-  "ApiId": "ocon6vm2d9",
-  "Name": "lux-video-api",
-  "DisableExecuteApiEndpoint": false,
-  "RouteSelectionExpression": "$request.method $request.path"
-}

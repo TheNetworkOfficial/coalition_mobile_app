@@ -230,13 +230,4 @@ flutter run -d <actual-device-id> # Mobile device/emulator (replace placeholder)
 flutter test
 ```
 
----
-
-## Video Pipeline Migration
-
-- Editing stays non-destructive: timeline data lives in `VideoTimeline` until you tap **Post**.
-- Exports now happen on-demand during posting via `VideoNative.exportEdits`.
-- Upload provider defaults to Mux with a Cloudflare Stream backend path—adjust as needed before launch.
-- Change upload settings in `lib/features/video/services/mux_upload_service.dart` (see `kUseMux`) and update API targets in `assets/config/backend_config.json`.
-
 Happy building!

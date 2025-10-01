@@ -1,7 +1,5 @@
 import 'dart:math' as math;
 
-import '../../feed/domain/feed_content.dart';
-import '../../../core/video/video_track.dart';
 
 enum EventRsvpStatus { confirmed, cancelled }
 
@@ -98,9 +96,6 @@ class CoalitionEvent {
     this.mediaType,
     this.coverImagePath,
     this.mediaAspectRatio,
-    this.overlays = const <FeedTextOverlay>[],
-    this.adaptiveMediaStream,
-    this.mediaFallbackStreams = const <VideoTrack>[],
   });
 
   final String id;
@@ -117,9 +112,6 @@ class CoalitionEvent {
   final EventMediaType? mediaType;
   final String? coverImagePath;
   final double? mediaAspectRatio;
-  final List<FeedTextOverlay> overlays;
-  final VideoTrack? adaptiveMediaStream;
-  final List<VideoTrack> mediaFallbackStreams;
 
   CoalitionEvent copyWith({
     String? title,
@@ -135,9 +127,6 @@ class CoalitionEvent {
     Object? coverImagePath = _sentinel,
     EventMediaType? mediaType,
     double? mediaAspectRatio,
-    List<FeedTextOverlay>? overlays,
-    Object? adaptiveMediaStream = _sentinel,
-    List<VideoTrack>? mediaFallbackStreams,
   }) {
     return CoalitionEvent(
       id: id,
@@ -156,12 +145,6 @@ class CoalitionEvent {
           : coverImagePath as String?,
       mediaType: mediaType ?? this.mediaType,
       mediaAspectRatio: mediaAspectRatio ?? this.mediaAspectRatio,
-      overlays: overlays ?? this.overlays,
-      adaptiveMediaStream: adaptiveMediaStream == _sentinel
-          ? this.adaptiveMediaStream
-          : adaptiveMediaStream as VideoTrack?,
-      mediaFallbackStreams:
-          mediaFallbackStreams ?? this.mediaFallbackStreams,
     );
   }
 

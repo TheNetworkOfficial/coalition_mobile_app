@@ -11,8 +11,9 @@ import 'package:uuid/uuid.dart';
 import '../domain/app_user.dart';
 import '../domain/auth_state.dart';
 import 'local_user_store.dart';
-import '../../profile/data/profile_connections_provider.dart';
-import '../../feed/data/feed_content_store.dart';
+
+const List<String> _defaultFollowerIds = <String>[];
+const List<String> _defaultFollowingIds = <String>[];
 
 class AuthCredentials {
   AuthCredentials({
@@ -107,35 +108,7 @@ class AuthController extends StateNotifier<AuthState> {
         final existing =
             _users.firstWhereOrNull((record) => record.user.id == activeId);
         if (existing != null) {
-          var activeUser = existing.user;
-          var needsPersist = false;
-          if (activeUser.followerIds.isEmpty &&
-              defaultFollowerConnectionIds.isNotEmpty) {
-            activeUser = activeUser.copyWith(
-              followerIds: List<String>.from(defaultFollowerConnectionIds),
-              followersCount: defaultFollowerConnectionIds.length,
-            );
-            needsPersist = true;
-          }
-          if (activeUser.followingIds.isEmpty &&
-              defaultFollowingConnectionIds.isNotEmpty) {
-            activeUser = activeUser.copyWith(
-              followingIds: List<String>.from(defaultFollowingConnectionIds),
-            );
-            needsPersist = true;
-          }
-          if (needsPersist) {
-            final index =
-                _users.indexWhere((record) => record.user.id == activeUser.id);
-            if (index != -1) {
-              _users[index] = StoredUserRecord(
-                user: activeUser,
-                passwordHash: existing.passwordHash,
-              );
-              await _persistUsers();
-            }
-          }
-          state = AuthState(user: activeUser);
+          state = AuthState(user: existing.user);
           return;
         }
       }
@@ -172,12 +145,12 @@ class AuthController extends StateNotifier<AuthState> {
       zipCode: trimmedZip,
       username: trimmedUsername,
       googleLinked: credentials.isGoogleUser,
-      followersCount: defaultFollowerConnectionIds.length,
+      followersCount: _defaultFollowerIds.length,
       totalLikes: 1289,
       likedContentIds: List<String>.from(_defaultLikedContentIds),
       myContentIds: List<String>.from(_defaultMyContentIds),
-      followerIds: List<String>.from(defaultFollowerConnectionIds),
-      followingIds: List<String>.from(defaultFollowingConnectionIds),
+      followerIds: List<String>.from(_defaultFollowerIds),
+      followingIds: List<String>.from(_defaultFollowingIds),
     );
 
     final record = StoredUserRecord(
@@ -343,27 +316,6 @@ class AuthController extends StateNotifier<AuthState> {
       updated.add(contentId);
     }
     await _updateActiveUser(user.copyWith(likedContentIds: updated));
-
-    // Also update the feed content store so UI that displays counts updates
-    try {
-      final catalog = _ref.read(feedContentCatalogProvider);
-      final index = catalog.indexWhere((c) => c.id == contentId);
-      if (index != -1) {
-        final existing = catalog[index];
-        final currentlyLiked = updated.contains(contentId);
-        final likesDelta = currentlyLiked ? 1 : -1;
-        final newLikes =
-            (existing.interactionStats.likes + likesDelta).clamp(0, 1 << 30);
-        final updatedStats =
-            existing.interactionStats.copyWith(likes: newLikes);
-        _ref
-            .read(feedContentStoreProvider.notifier)
-            .updateContent(existing.copyWith(interactionStats: updatedStats));
-      }
-    } catch (e) {
-      // Non-fatal - leave user likes updated even if feed update fails
-      debugPrint('Failed to update feed content likes: $e');
-    }
   }
 
   Future<void> recordEventRsvp({
