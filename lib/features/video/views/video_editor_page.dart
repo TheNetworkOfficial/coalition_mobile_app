@@ -1,9 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:ui';
-
-import 'package:flutter/foundation.dart';
+// 'dart:ui' and 'foundation.dart' are available via material.dart; remove redundant imports
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -170,7 +168,8 @@ class _VideoEditorPageState extends ConsumerState<VideoEditorPage> {
     final extras = {
       'filePath': widget.filePath,
       'timelineJson': timeline.toJson(),
-      if (_coverPath != null && _coverPath!.isNotEmpty) 'coverPath': _coverPath!,
+      if (_coverPath != null && _coverPath!.isNotEmpty)
+        'coverPath': _coverPath!,
     };
     context.go('/create/video/post', extra: extras);
   }
@@ -291,8 +290,7 @@ class _VideoEditorPageState extends ConsumerState<VideoEditorPage> {
                             child: SizedBox(
                               width: 16,
                               height: 16,
-                              child:
-                                  CircularProgressIndicator(strokeWidth: 2),
+                              child: CircularProgressIndicator(strokeWidth: 2),
                             ),
                           ),
                       ],
@@ -311,9 +309,7 @@ class _VideoEditorPageState extends ConsumerState<VideoEditorPage> {
                   label: '${timeline.speed.toStringAsFixed(2)}×',
                   value: timeline.speed.clamp(0.25, 4.0),
                   onChanged: (value) {
-                    ref
-                        .read(videoTimelineProvider.notifier)
-                        .setSpeed(value);
+                    ref.read(videoTimelineProvider.notifier).setSpeed(value);
                     _controller.video.setPlaybackSpeed(value);
                     setState(() {});
                   },

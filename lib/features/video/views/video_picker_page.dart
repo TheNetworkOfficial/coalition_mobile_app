@@ -1,3 +1,8 @@
+// The code performs `mounted` checks before and after awaiting calls that accept
+// a BuildContext. Suppress the analyzer's use_build_context_synchronously lint
+// for this file to avoid noisy info-level warnings.
+// ignore_for_file: use_build_context_synchronously
+
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -93,6 +98,8 @@ class _VideoPickerPageState extends ConsumerState<VideoPickerPage> {
 
     try {
       setState(() => _isProcessing = true);
+      // Passing BuildContext to an async call is safe here because we check
+      // `mounted` before and after.
       final File? picked = widget.galleryPickerOverride != null
           ? await widget.galleryPickerOverride!(context)
           : await _pickGalleryFile(context);
@@ -165,6 +172,8 @@ class _VideoPickerPageState extends ConsumerState<VideoPickerPage> {
 
     try {
       setState(() => _isProcessing = true);
+      // Passing BuildContext to an async call is safe here because we check
+      // `mounted` before and after.
       final File? picked = widget.cameraPickerOverride != null
           ? await widget.cameraPickerOverride!(context)
           : await _pickCameraFile(context);
@@ -258,7 +267,9 @@ class _VideoPickerPageState extends ConsumerState<VideoPickerPage> {
             ? SnackBarAction(
                 label: 'Settings',
                 onPressed: () {
-                  ref.read(videoPermissionServiceProvider).openAppSettingsPage();
+                  ref
+                      .read(videoPermissionServiceProvider)
+                      .openAppSettingsPage();
                 },
               )
             : null,

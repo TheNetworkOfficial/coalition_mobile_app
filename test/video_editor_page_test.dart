@@ -1,4 +1,4 @@
-import 'dart:ui';
+// removed unused dart:ui import
 
 import 'package:coalition_mobile_app/features/video/platform/video_native.dart';
 import 'package:coalition_mobile_app/features/video/providers/video_timeline_provider.dart';
@@ -7,13 +7,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:video_editor/domain/entities/cover_data.dart';
 import 'package:video_editor/video_editor.dart';
+import 'package:video_editor/src/models/cover_data.dart';
 import 'package:video_player/video_player.dart';
 
-class _MockVideoEditorController extends Mock implements VideoEditorController {}
+class _MockVideoEditorController extends Mock
+    implements VideoEditorController {}
 
-class _MockVideoPlayerController extends Mock implements VideoPlayerController {}
+class _MockVideoPlayerController extends Mock
+    implements VideoPlayerController {}
 
 class _StubVideoNative extends VideoNativeBridge {
   int coverCalls = 0;
@@ -26,10 +28,12 @@ class _StubVideoNative extends VideoNativeBridge {
     required String filePath,
     required Map<String, dynamic> timelineJson,
     required int targetBitrateBps,
-  }) async => '';
+  }) async =>
+      '';
 
   @override
-  Future<String> generateCoverImage(String filePath, {required double seconds}) async {
+  Future<String> generateCoverImage(String filePath,
+      {required double seconds}) async {
     coverCalls += 1;
     return 'cover.png';
   }
@@ -39,7 +43,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() {
-    registerFallbackValue(VideoPlayerValue.uninitialized());
+    registerFallbackValue(const VideoPlayerValue.uninitialized());
     registerFallbackValue(const Rect.fromLTRB(0, 0, 1, 1));
   });
 
@@ -133,8 +137,7 @@ void main() {
     await tester.pump();
 
     final timelineAfterCrop = container.read(videoTimelineProvider);
-    expect(timelineAfterCrop.cropRect,
-        const Rect.fromLTRB(0.1, 0.2, 0.9, 0.8));
+    expect(timelineAfterCrop.cropRect, const Rect.fromLTRB(0.1, 0.2, 0.9, 0.8));
 
     coverNotifier.value = const CoverData(timeMs: 5000);
     coverNotifier.notifyListeners();
