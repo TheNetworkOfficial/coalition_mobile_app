@@ -34,6 +34,9 @@ class VideoPickerPage extends ConsumerStatefulWidget {
 }
 
 class _VideoPickerPageState extends ConsumerState<VideoPickerPage> {
+  static const int _flagReadUriPermission = 0x00000001;
+  static const int _flagPersistableUriPermission = 0x00000040;
+
   bool _isProcessing = false;
 
   @override
@@ -302,10 +305,31 @@ class _VideoPickerPageState extends ConsumerState<VideoPickerPage> {
       if (uri == null || !uri.startsWith('content://')) {
         return;
       }
-      await ref.read(videoNativeProvider).persistUriPermission(uri);
+      final intentFlags = _inferPersistableFlags(uri);
+      await ref
+          .read(videoNativeProvider)
+          .persistUriPermission(uri, intentFlags: intentFlags);
     } catch (error, stackTrace) {
       debugPrint('Failed to persist URI permission for asset: $error\n$stackTrace');
     }
+  }
+
+  int _inferPersistableFlags(String uri) {
+    final parsed = Uri.tryParse(uri);
+    if (parsed == null) {
+      return 0;
+    }
+    if (parsed.scheme?.toLowerCase() != 'content') {
+      return 0;
+    }
+
+    final segments = parsed.pathSegments;
+    final isDocument = segments.contains('document') || uri.contains('/document/');
+    if (!isDocument) {
+      return 0;
+    }
+
+    return _flagReadUriPermission | _flagPersistableUriPermission;
   }
 }
 

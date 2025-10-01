@@ -4,13 +4,11 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.media.Image
-import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
-import android.os.ParcelFileDescriptor
+import android.provider.DocumentsContract
 import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
@@ -57,6 +55,7 @@ class VideoNative(
     private val transformerHandler = Handler(transformerThread.looper)
     private var transformer: Transformer? = null
     private val isDisposed = AtomicBoolean(false)
+    private val frameExtractor = VideoFrameExtractor.getInstance(context)
 
     init {
         channel.setMethodCallHandler(this)
@@ -186,8 +185,9 @@ class VideoNative(
         executor.execute {
             try {
                 val uri = Uri.parse(uriString)
+                val intentFlags = call.argument<Int>("flags") ?: 0
                 if (uri.scheme.equals("content", ignoreCase = true)) {
-                    maybeTakePersistableUriPermission(uri)
+                    maybeTakePersistableUriPermission(uri, intentFlags)
                 }
                 postSuccess(result, null)
             } catch (t: Throwable) {
@@ -243,67 +243,33 @@ class VideoNative(
     }
 
     private fun generateCoverImage(filePath: String, seconds: Double): String {
-        val frameTimeUs = (seconds * 1_000_000L).toLong().coerceAtLeast(0L)
+        val frameTimeUs = (seconds * 1_000_000L).toLong()
         val parsedUri = try {
             Uri.parse(filePath)
         } catch (_: Throwable) {
             null
         }
-        val contentUri = parsedUri?.takeIf { it.scheme.equals("content", ignoreCase = true) }
 
-        var parcelFileDescriptor: ParcelFileDescriptor? = null
-        var copiedFile: File? = null
-
-        val retriever = MediaMetadataRetriever()
-        try {
-            if (contentUri != null) {
-                maybeTakePersistableUriPermission(contentUri)
-                parcelFileDescriptor = openContentFileDescriptor(contentUri)
-                if (parcelFileDescriptor != null) {
-                    retriever.setDataSource(parcelFileDescriptor!!.fileDescriptor)
-                } else {
-                    copiedFile = copyContentUriToTempFile(contentUri)
-                    val localCopy = copiedFile ?: throw IOException("Unable to open scoped URI: $contentUri")
-                    retriever.setDataSource(localCopy.absolutePath)
-                }
-            } else {
-                retriever.setDataSource(filePath)
+        val bitmap = when {
+            parsedUri != null && parsedUri.scheme.equals("content", ignoreCase = true) -> {
+                frameExtractor.extractFrameFromUri(parsedUri, frameTimeUs)
             }
-
-            val bitmap = retriever
-                .getFrameAtTime(frameTimeUs, MediaMetadataRetriever.OPTION_CLOSEST)
-                ?: throw IOException("Unable to retrieve frame with MediaMetadataRetriever")
-
-            return writeBitmapToCache(bitmap)
-        } catch (error: Throwable) {
-            android.util.Log.w(TAG, "MediaMetadataRetriever failed for $filePath", error)
-        } finally {
-            retriever.release()
-            try {
-                parcelFileDescriptor?.close()
-            } catch (_: Throwable) {
+            parsedUri != null && parsedUri.scheme.equals("file", ignoreCase = true) -> {
+                frameExtractor.extractFrameFromUri(parsedUri, frameTimeUs)
             }
-            copiedFile?.let {
-                if (!it.delete()) {
-                    android.util.Log.d(TAG, "Temporary copy ${it.absolutePath} could not be deleted immediately")
-                }
+            parsedUri != null && parsedUri.scheme.isNullOrEmpty().not() -> {
+                frameExtractor.extractFrameFromUri(parsedUri, frameTimeUs)
+            }
+            else -> {
+                frameExtractor.extractFrameFromPath(filePath, frameTimeUs)
             }
         }
 
-        val fallbackUri = contentUri ?: parsedUri ?: Uri.fromFile(File(filePath))
-        val fallbackBitmap = try {
-            extractFrameWithMedia3(fallbackUri, frameTimeUs)
-        } catch (error: Throwable) {
-            android.util.Log.e(TAG, "Media3 frame extraction failed for $fallbackUri", error)
-            null
-        }
-
-        val bitmap = fallbackBitmap ?: throw IOException("Unable to retrieve frame for $filePath")
         return writeBitmapToCache(bitmap)
     }
 
     private fun writeBitmapToCache(bitmap: Bitmap): String {
-        val outputFile = createTempFile(prefix = "cover_", suffix = ".png")
+        val outputFile = createVideoTempFile(context, prefix = "cover_", suffix = ".png")
         FileOutputStream(outputFile).use { output ->
             if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) {
                 throw IOException("Failed to write cover image")
@@ -312,149 +278,23 @@ class VideoNative(
         return outputFile.absolutePath
     }
 
-    private fun maybeTakePersistableUriPermission(uri: Uri) {
+    private fun maybeTakePersistableUriPermission(uri: Uri, intentFlags: Int) {
+        if ((intentFlags and Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION) == 0) {
+            return
+        }
+        if (!DocumentsContract.isDocumentUri(context, uri)) {
+            return
+        }
+
         try {
             context.contentResolver.takePersistableUriPermission(
                 uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                intentFlags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION),
             )
         } catch (security: SecurityException) {
             android.util.Log.w(TAG, "Unable to persist URI permission for $uri", security)
         } catch (_: Throwable) {
         }
-    }
-
-    private fun openContentFileDescriptor(uri: Uri): ParcelFileDescriptor? {
-        return try {
-            context.contentResolver.openFileDescriptor(uri, "r")
-        } catch (security: SecurityException) {
-            android.util.Log.w(TAG, "openFileDescriptor security exception for $uri", security)
-            null
-        } catch (ioe: IOException) {
-            android.util.Log.w(TAG, "openFileDescriptor IO exception for $uri", ioe)
-            null
-        } catch (t: Throwable) {
-            android.util.Log.w(TAG, "openFileDescriptor unexpected error for $uri", t)
-            null
-        }
-    }
-
-    private fun copyContentUriToTempFile(uri: Uri): File? {
-        return try {
-            val inputStream = context.contentResolver.openInputStream(uri) ?: return null
-            inputStream.use { input ->
-                val tempFile = createTempFile(prefix = "scoped_video_", suffix = ".tmp")
-                FileOutputStream(tempFile).use { output ->
-                    input.copyTo(output)
-                }
-                tempFile
-            }
-        } catch (t: Throwable) {
-            android.util.Log.w(TAG, "Failed to copy scoped URI $uri to temp file", t)
-            null
-        }
-    }
-
-    @OptIn(UnstableApi::class)
-    private fun extractFrameWithMedia3(uri: Uri, frameTimeUs: Long): Bitmap? {
-        val latch = CountDownLatch(1)
-        val result = AtomicReference<Bitmap?>()
-        val failure = AtomicReference<Throwable?>()
-        val finished = AtomicBoolean(false)
-
-        val transformer = FrameExtractionSupport.buildFrameExtractorTransformer(
-            context,
-            object : FrameExtractionSupport.Listener {
-                override fun onImageAvailable(image: Image) {
-                    try {
-                        result.set(imageToBitmap(image))
-                    } catch (t: Throwable) {
-                        failure.compareAndSet(null, t)
-                    } finally {
-                        if (finished.compareAndSet(false, true)) {
-                            latch.countDown()
-                        }
-                    }
-                }
-            },
-        )
-
-        transformer.addListener(
-            object : Transformer.Listener {
-                override fun onTransformationError(
-                    mediaItem: MediaItem,
-                    exception: Exception,
-                ) {
-                    failure.compareAndSet(null, exception)
-                    if (finished.compareAndSet(false, true)) {
-                        latch.countDown()
-                    }
-                }
-
-                override fun onTransformationCompleted(
-                    mediaItem: MediaItem,
-                    transformationResult: TransformationResult,
-                ) {
-                    if (result.get() == null) {
-                        failure.compareAndSet(null, IOException("No frame extracted"))
-                    }
-                    if (finished.compareAndSet(false, true)) {
-                        latch.countDown()
-                    }
-                }
-            },
-        )
-
-        val clipStartMs = max(0L, frameTimeUs / 1000)
-        val clipEndMs = clipStartMs + 1_000L
-
-        val mediaItemBuilder = MediaItem.Builder().setUri(uri)
-        mediaItemBuilder.setClippingConfiguration(
-            MediaItem.ClippingConfiguration.Builder()
-                .setStartPositionMs(clipStartMs)
-                .setEndPositionMs(clipEndMs)
-                .build(),
-        )
-
-        val edited = EditedMediaItem.Builder(mediaItemBuilder.build())
-            .setRemoveAudio(true)
-            .build()
-
-        val tempOutput = createTempFile(prefix = "frame_extract_", suffix = ".tmp")
-        try {
-            transformer.start(edited, tempOutput.absolutePath)
-            if (!latch.await(5, TimeUnit.SECONDS)) {
-                failure.compareAndSet(null, IOException("Timed out waiting for frame extraction"))
-                finished.compareAndSet(false, true)
-            }
-        } catch (ie: InterruptedException) {
-            Thread.currentThread().interrupt()
-            failure.compareAndSet(null, ie)
-        } finally {
-            transformer.cancel()
-            if (!tempOutput.delete()) {
-                android.util.Log.d(TAG, "Temporary transformer output ${tempOutput.absolutePath} could not be deleted")
-            }
-        }
-
-        failure.get()?.let { throw it }
-        return result.get()
-    }
-
-    private fun imageToBitmap(image: Image): Bitmap {
-        val plane = image.planes.firstOrNull() ?: throw IOException("Image contains no planes")
-        val buffer = plane.buffer
-        buffer.rewind()
-        val pixelStride = plane.pixelStride
-        val rowStride = plane.rowStride
-        val rowPadding = rowStride - pixelStride * image.width
-        val bitmap = Bitmap.createBitmap(
-            image.width + rowPadding / pixelStride,
-            image.height,
-            Bitmap.Config.ARGB_8888,
-        )
-        bitmap.copyPixelsFromBuffer(buffer)
-        return Bitmap.createBitmap(bitmap, 0, 0, image.width, image.height)
     }
 
     @OptIn(UnstableApi::class)
@@ -464,7 +304,7 @@ class VideoNative(
         targetBitrate: Int,
     ): String {
         val editedMediaItem = buildEditedMediaItem(filePath, timeline)
-        val outputFile = createTempFile(prefix = "export_", suffix = ".mp4")
+        val outputFile = createVideoTempFile(context, prefix = "export_", suffix = ".mp4")
 
         val latch = CountDownLatch(1)
         var exportError: Exception? = null
@@ -682,14 +522,6 @@ class VideoNative(
             bitmap.recycle()
             null
         }
-    }
-
-    private fun createTempFile(prefix: String, suffix: String): File {
-        val directory = File(context.cacheDir, "video_native")
-        if (!directory.exists()) {
-            directory.mkdirs()
-        }
-        return File.createTempFile(prefix, suffix, directory)
     }
 
     // Helpers to convert org.json types into Kotlin collections.
