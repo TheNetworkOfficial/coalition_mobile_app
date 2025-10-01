@@ -56,7 +56,31 @@ internal class VideoFrameExtractor private constructor(private val appContext: C
         frameTimeUs: Long,
         targetSizePx: Int = DEFAULT_TARGET_SIZE,
     ): Bitmap {
-        return extractFrame(DataSource.DescriptorSource(descriptor), frameTimeUs, targetSizePx)
+        val descriptorSource = DataSource.DescriptorSource(descriptor)
+        val originalPosition = try {
+            android.system.Os.lseek(
+                descriptor.fileDescriptor,
+                0,
+                android.system.OsConstants.SEEK_CUR,
+            )
+        } catch (_: android.system.ErrnoException) {
+            null
+        }
+        return try {
+            extractFrame(descriptorSource, frameTimeUs, targetSizePx)
+        } finally {
+            descriptorSource.deleteTrackedDescriptorTempCopies()
+            if (originalPosition != null) {
+                try {
+                    android.system.Os.lseek(
+                        descriptor.fileDescriptor,
+                        originalPosition,
+                        android.system.OsConstants.SEEK_SET,
+                    )
+                } catch (_: android.system.ErrnoException) {
+                }
+            }
+        }
     }
 
     private fun extractFrame(
@@ -322,10 +346,9 @@ internal class VideoFrameExtractor private constructor(private val appContext: C
                             input.channel.transferTo(0, Long.MAX_VALUE, output.channel)
                         }
                     }
+                    trackDescriptorTempCopy(temp)
                 } catch (error: Throwable) {
-                    if (!temp.delete()) {
-                        android.util.Log.d(TAG, "Temporary descriptor copy ${temp.absolutePath} could not be deleted after failure")
-                    }
+                    discardTempCopyImmediately(temp)
                     throw error
                 } finally {
                     try {
@@ -333,11 +356,7 @@ internal class VideoFrameExtractor private constructor(private val appContext: C
                     } catch (_: Throwable) {
                     }
                 }
-                PreparedUri(Uri.fromFile(temp)) {
-                    if (!temp.delete()) {
-                        android.util.Log.d(TAG, "Temporary descriptor copy ${temp.absolutePath} could not be deleted")
-                    }
-                }
+                PreparedUri(Uri.fromFile(temp))
             }
         }
     }
@@ -399,8 +418,46 @@ internal class VideoFrameExtractor private constructor(private val appContext: C
         }
 
         data class DescriptorSource(private val descriptor: ParcelFileDescriptor) : DataSource() {
+            private val descriptorTempCopies = mutableListOf<File>()
+
             fun duplicate(): ParcelFileDescriptor {
+                try {
+                    android.system.Os.lseek(
+                        descriptor.fileDescriptor,
+                        0,
+                        android.system.OsConstants.SEEK_SET,
+                    )
+                } catch (_: android.system.ErrnoException) {
+                }
                 return ParcelFileDescriptor.dup(descriptor.fileDescriptor)
+            }
+
+            fun trackDescriptorTempCopy(temp: File) {
+                synchronized(descriptorTempCopies) {
+                    descriptorTempCopies.add(temp)
+                }
+            }
+
+            fun deleteTrackedDescriptorTempCopies() {
+                val copies = synchronized(descriptorTempCopies) {
+                    descriptorTempCopies.toList()
+                }
+                for (temp in copies) {
+                    try {
+                        temp.delete()
+                    } catch (_: SecurityException) {
+                    }
+                }
+                synchronized(descriptorTempCopies) {
+                    descriptorTempCopies.removeAll(copies)
+                }
+            }
+
+            fun discardTempCopyImmediately(temp: File) {
+                try {
+                    temp.delete()
+                } catch (_: SecurityException) {
+                }
             }
 
             override fun toString(): String = "DescriptorSource(descriptor=${descriptor.fd})"
