@@ -10,7 +10,6 @@ import '../../feed/data/feed_ranking_algorithm.dart';
 import '../../feed/domain/feed_content.dart';
 import 'widgets/feed_card.dart';
 import 'widgets/feed_comments_sheet.dart';
-import 'widgets/simple_video_feed_item.dart';
 
 class FeedScreen extends ConsumerStatefulWidget {
   const FeedScreen({super.key});
@@ -84,20 +83,12 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                 setState(() => _activePageIndex = index);
               },
               itemBuilder: (context, index) {
-                final cycleLength = items.length + 1;
-                final loopIndex = index % cycleLength;
-                final isActive = index == _activePageIndex;
-
-                if (loopIndex == 0) {
-                  return Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-                    child: SimpleVideoFeedItem(
-                      isActive: isActive,
-                    ),
-                  );
+                final cycleLength = items.length;
+                if (cycleLength == 0) {
+                  return const SizedBox.shrink();
                 }
-
-                final contentIndex = (loopIndex - 1) % items.length;
+                final isActive = index == _activePageIndex;
+                final contentIndex = index % cycleLength;
                 final content = items[contentIndex];
                 final isLiked = user?.likedContentIds.contains(content.id) ?? false;
                 final isFollowingCreator = _isFollowingPoster(user, content);

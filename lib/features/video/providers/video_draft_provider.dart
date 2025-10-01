@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -14,7 +15,7 @@ import '../platform/video_native.dart';
 class VideoDraftsNotifier extends Notifier<VideoDraftState> {
   VideoDraftsNotifier();
 
-  static const Uuid _uuid = Uuid();
+  static final Uuid _uuid = Uuid();
   Directory? _cachedDraftDirectory;
 
   @override
@@ -184,18 +185,72 @@ class VideoDraftsNotifier extends Notifier<VideoDraftState> {
   }
 
   Future<void> _persistXFile(XFile source, String destination) async {
+    debugPrint(
+        'Persisting picked video: name=${source.name} path=${source.path} -> $destination');
+
+    // Inspect the source path so logs show if the XFile is a content:// URI
+    // or a normal filesystem path. This helps diagnose emulator/permission
+    // issues where the picked file isn't accessible by traditional File APIs.
+    try {
+      final srcPath = source.path;
+      if (srcPath.isEmpty) {
+        debugPrint(
+            'Picked XFile has empty path (likely platform-stream backed).');
+      } else if (srcPath.startsWith('content://')) {
+        debugPrint(
+            'Picked XFile path appears to be a content:// URI: $srcPath');
+      } else {
+        final srcFile = File(srcPath);
+        final exists = await srcFile.exists();
+        debugPrint('Picked XFile local file exists: $exists at $srcPath');
+      }
+    } catch (e) {
+      debugPrint('Error while inspecting picked file path: $e');
+    }
+
+    Future<void> _copyByStream(XFile src, String dest) async {
+      // Use streaming copy to avoid loading large video into memory and to
+      // support content:// URIs backed by platform streams.
+      final inStream = src.openRead();
+      final outFile = File(dest);
+      final sink = outFile.openWrite();
+      try {
+        await for (final chunk in inStream) {
+          sink.add(chunk);
+        }
+        await sink.flush();
+      } finally {
+        await sink.close();
+      }
+    }
+
     try {
       await source.saveTo(destination);
-    } on UnsupportedError {
-      final bytes = await source.readAsBytes();
-      await File(destination).writeAsBytes(bytes);
-    } on PlatformException {
-      final bytes = await source.readAsBytes();
-      await File(destination).writeAsBytes(bytes);
+    } on UnsupportedError catch (e) {
+      debugPrint('saveTo unsupported, falling back to stream copy: $e');
+      await _copyByStream(source, destination);
+    } on PlatformException catch (e) {
+      debugPrint(
+          'saveTo threw PlatformException, falling back to stream copy: ${e.message}');
+      await _copyByStream(source, destination);
+    } catch (error) {
+      // As a last-resort attempt, try streaming. If this also fails, surface
+      // the original error to the caller.
+      debugPrint(
+          'saveTo failed with unexpected error: $error; trying stream fallback');
+      try {
+        await _copyByStream(source, destination);
+      } catch (streamError) {
+        debugPrint('stream fallback also failed: $streamError');
+        rethrow;
+      }
     }
 
     if (!await File(destination).exists()) {
-      throw FileSystemException('Persisted video missing', destination);
+      final msg =
+          'Persisted video missing at expected destination: $destination';
+      debugPrint(msg);
+      throw FileSystemException(msg, destination);
     }
   }
 

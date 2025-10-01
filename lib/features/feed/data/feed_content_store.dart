@@ -4,10 +4,9 @@ import 'package:flutter_riverpod/legacy.dart';
 
 import '../../../core/video/video_track.dart';
 import '../domain/feed_content.dart';
-import 'feed_sample_content.dart';
 
 class FeedContentStore extends StateNotifier<List<FeedContent>> {
-  FeedContentStore() : super(List<FeedContent>.from(sampleFeedContent));
+  FeedContentStore() : super(const <FeedContent>[]);
 
   void addContent(FeedContent content) {
     final existingIndex = state.indexWhere((item) => item.id == content.id);

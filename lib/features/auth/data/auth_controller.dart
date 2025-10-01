@@ -84,14 +84,8 @@ class AuthController extends StateNotifier<AuthState> {
 
   static const _uuid = Uuid();
   // cSpell:ignore roundtable
-  static const List<String> _defaultLikedContentIds = [
-    'organizing-first-shift',
-    'community-roundtable',
-    'bluebird-bus-tour',
-  ];
-  static const List<String> _defaultMyContentIds = [
-    'door-to-door-day',
-  ];
+  static const List<String> _defaultLikedContentIds = <String>[];
+  static const List<String> _defaultMyContentIds = <String>[];
 
   late final Future<void> _initialization;
   List<StoredUserRecord> _users = <StoredUserRecord>[];

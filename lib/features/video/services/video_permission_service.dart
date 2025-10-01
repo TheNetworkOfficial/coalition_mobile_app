@@ -125,9 +125,9 @@ class VideoPermissionService {
     try {
       return await callback();
     } on MissingPluginException catch (error, stackTrace) {
-      _throwPermissionError(error, stackTrace);
+      _throwPermissionError(error, stackTrace); // throws, never returns
     } on PlatformException catch (error, stackTrace) {
-      _throwPermissionError(error, stackTrace);
+      _throwPermissionError(error, stackTrace); // throws, never returns
     }
   }
 
@@ -156,14 +156,19 @@ class VideoPermissionService {
     if (Platform.isAndroid) {
       final sdkInt = await _androidSdkInt();
       if (sdkInt != null && sdkInt >= 33) {
-        return const <Permission>[Permission.videos];
+        // Android 13+ (API 33/34): use READ_MEDIA_VIDEO
+        return [Permission.videos];
+      } else {
+        // Android 12 and below: fall back to legacy storage
+        return [Permission.storage];
       }
-      return const <Permission>[Permission.storage];
     }
     if (Platform.isIOS) {
-      return const <Permission>[Permission.photos];
+      // iOS requires Photos permission for picking videos
+      return [Permission.photos];
     }
-    return const <Permission>[];
+    // Fallback: no relevant permission
+    return [];
   }
 
   Future<int?> _androidSdkInt() async {

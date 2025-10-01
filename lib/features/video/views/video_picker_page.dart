@@ -70,6 +70,9 @@ class VideoPickerPage extends ConsumerWidget {
                 return;
               }
 
+              debugPrint(
+                  'VideoPickerPage: picked file: path=${pickedFile.path} name=${pickedFile.name}');
+
               final draft = await ref
                   .read(videoDraftsProvider.notifier)
                   .createDraftFromXFile(pickedFile);
