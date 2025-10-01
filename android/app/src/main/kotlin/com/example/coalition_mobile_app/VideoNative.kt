@@ -36,7 +36,6 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
-import kotlin.math.max
 import kotlin.OptIn
 
 private const val CHANNEL_NAME = "video_native"
@@ -51,8 +50,16 @@ class VideoNative(
     private val channel = MethodChannel(messenger, CHANNEL_NAME)
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val transformerThread = HandlerThread("VideoTransformerThread").apply { start() }
-    private val transformerHandler = Handler(transformerThread.looper)
+    private val transformerThreadLazy = lazy {
+        HandlerThread("media3-transformer").apply { start() }
+    }
+    private val transformerThread: HandlerThread
+        get() = transformerThreadLazy.value
+    private val transformerHandlerLazy = lazy {
+        Handler(transformerThread.looper)
+    }
+    private val transformerHandler: Handler
+        get() = transformerHandlerLazy.value
     private var transformer: Transformer? = null
     private val isDisposed = AtomicBoolean(false)
     private val frameExtractor = VideoFrameExtractor.getInstance(context)
@@ -61,19 +68,43 @@ class VideoNative(
         channel.setMethodCallHandler(this)
     }
 
+    private fun postToTransformerThread(block: () -> Unit) {
+        transformerHandler.post(block)
+    }
+
     fun dispose() {
         if (isDisposed.compareAndSet(false, true)) {
             channel.setMethodCallHandler(null)
-            runOnTransformerThread {
-                transformer?.cancel()
-                transformer = null
+            if (transformerHandlerLazy.isInitialized()) {
+                val latch = CountDownLatch(1)
+                var cancelError: Throwable? = null
+                postToTransformerThread {
+                    try {
+                        transformer?.cancel()
+                        transformer = null
+                    } catch (t: Throwable) {
+                        cancelError = t
+                    } finally {
+                        latch.countDown()
+                    }
+                }
+                try {
+                    latch.await()
+                } catch (ie: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                }
+                cancelError?.let {
+                    android.util.Log.w(TAG, "Error cancelling transformer during dispose", it)
+                }
             }
             executor.shutdownNow()
-            transformerThread.quitSafely()
-            try {
-                transformerThread.join()
-            } catch (ie: InterruptedException) {
-                Thread.currentThread().interrupt()
+            if (transformerThreadLazy.isInitialized()) {
+                transformerThread.quitSafely()
+                try {
+                    transformerThread.join()
+                } catch (ie: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                }
             }
         }
     }
@@ -167,7 +198,7 @@ class VideoNative(
 
     private fun handleCancelExport(result: MethodChannel.Result) {
         executor.execute {
-            runOnTransformerThread {
+            postToTransformerThread {
                 transformer?.cancel()
                 transformer = null
             }
@@ -208,37 +239,6 @@ class VideoNative(
                 throwable.message ?: throwable::class.java.simpleName,
                 null,
             )
-        }
-    }
-
-    private fun runOnTransformerThread(block: () -> Unit) {
-        if (Looper.myLooper() == transformerHandler.looper) {
-            block()
-            return
-        }
-
-        val latch = CountDownLatch(1)
-        val failure = arrayOfNulls<Throwable>(1)
-        transformerHandler.post {
-            try {
-                block()
-            } catch (t: Throwable) {
-                failure[0] = t
-            } finally {
-                latch.countDown()
-            }
-        }
-
-        try {
-            latch.await()
-        } catch (ie: InterruptedException) {
-            Thread.currentThread().interrupt()
-            throw ie
-        }
-
-        val error = failure[0]
-        if (error != null) {
-            throw error
         }
     }
 
@@ -342,38 +342,77 @@ class VideoNative(
             )
             .build()
 
-        var transformer: Transformer? = null
-        runOnTransformerThread {
-            val createdTransformer = Transformer.Builder(context)
-                .setEncoderFactory(encoderFactory)
-                .addListener(listener)
-                .build()
+        val activeTransformerRef = AtomicReference<Transformer?>()
+        val transformerSetupLatch = CountDownLatch(1)
+        var transformerSetupError: Throwable? = null
+        postToTransformerThread {
+            try {
+                val createdTransformer = Transformer.Builder(context)
+                    .setEncoderFactory(encoderFactory)
+                    .build()
+                createdTransformer.addListener(listener)
 
-            android.util.Log.i(
-                TAG,
-                "exportEdits: starting transformer for filePath=$filePath output=${outputFile.absolutePath} targetBitrate=$targetBitrate",
-            )
+                android.util.Log.i(
+                    TAG,
+                    "exportEdits: starting transformer for filePath=$filePath output=${outputFile.absolutePath} targetBitrate=$targetBitrate",
+                )
 
-            this.transformer?.cancel()
-            this.transformer = createdTransformer
-            createdTransformer.start(editedMediaItem, outputFile.absolutePath)
-            transformer = createdTransformer
+                this.transformer?.cancel()
+                this.transformer = createdTransformer
+                createdTransformer.start(editedMediaItem, outputFile.absolutePath)
+                activeTransformerRef.set(createdTransformer)
+            } catch (t: Throwable) {
+                transformerSetupError = t
+            } finally {
+                transformerSetupLatch.countDown()
+            }
         }
 
-        val activeTransformer = transformer
+        try {
+            transformerSetupLatch.await()
+        } catch (ie: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw ie
+        }
+
+        transformerSetupError?.let { throw it }
+
+        val activeTransformer = activeTransformerRef.get()
             ?: throw IllegalStateException("Transformer failed to start")
 
         try {
             latch.await()
         } catch (ie: InterruptedException) {
             Thread.currentThread().interrupt()
-            activeTransformer.cancel()
+            val cancelLatch = CountDownLatch(1)
+            postToTransformerThread {
+                try {
+                    activeTransformer.cancel()
+                } finally {
+                    cancelLatch.countDown()
+                }
+            }
+            try {
+                cancelLatch.await(5, TimeUnit.SECONDS)
+            } catch (interrupted: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
             throw ie
         } finally {
-            runOnTransformerThread {
-                if (this.transformer === activeTransformer) {
-                    this.transformer = null
+            val clearLatch = CountDownLatch(1)
+            postToTransformerThread {
+                try {
+                    if (this.transformer === activeTransformer) {
+                        this.transformer = null
+                    }
+                } finally {
+                    clearLatch.countDown()
                 }
+            }
+            try {
+                clearLatch.await(5, TimeUnit.SECONDS)
+            } catch (interrupted: InterruptedException) {
+                Thread.currentThread().interrupt()
             }
         }
 
