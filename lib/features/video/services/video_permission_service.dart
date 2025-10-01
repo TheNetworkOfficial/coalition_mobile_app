@@ -79,6 +79,54 @@ class VideoPermissionService {
     );
   }
 
+  Future<VideoPermissionResult> ensureCameraGranted({
+    bool requestIfDenied = true,
+  }) async {
+    if (!_requiresRuntimePermission) {
+      return const VideoPermissionResult(
+        granted: true,
+        permanentlyDenied: false,
+      );
+    }
+
+    PermissionStatus status;
+    try {
+      status = await Permission.camera.status;
+    } on MissingPluginException catch (error, stackTrace) {
+      _throwPermissionError(error, stackTrace);
+    } on PlatformException catch (error, stackTrace) {
+      _throwPermissionError(error, stackTrace);
+    }
+
+    if (status.isGranted) {
+      return const VideoPermissionResult(granted: true, permanentlyDenied: false);
+    }
+
+    if (!requestIfDenied) {
+      return VideoPermissionResult(
+        granted: false,
+        permanentlyDenied: status.isPermanentlyDenied,
+      );
+    }
+
+    try {
+      status = await Permission.camera.request();
+    } on MissingPluginException catch (error, stackTrace) {
+      _throwPermissionError(error, stackTrace);
+    } on PlatformException catch (error, stackTrace) {
+      _throwPermissionError(error, stackTrace);
+    }
+
+    if (status.isGranted) {
+      return const VideoPermissionResult(granted: true, permanentlyDenied: false);
+    }
+
+    return VideoPermissionResult(
+      granted: false,
+      permanentlyDenied: status.isPermanentlyDenied,
+    );
+  }
+
   Future<void> openAppSettingsPage() async {
     try {
       await openAppSettings();

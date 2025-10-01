@@ -19,16 +19,19 @@ dependencies:
   google_sign_in: ^7.2.0
   shared_preferences: ^2.2.3
   crypto: ^3.0.3
-  image_picker: ^1.1.1
-  device_info_plus: ^10.1.0
+  wechat_assets_picker: ^9.0.5
+  wechat_camera_picker: ^4.0.5
+  photo_manager: ^3.2.3
+  video_editor: ^2.7.0
   video_player: ^2.9.1
-  photo_manager: ^3.7.1
+  permission_handler: ^11.3.0
+  path_provider: ^2.1.2
+  device_info_plus: ^11.1.0
+  image_picker: ^1.1.1
   flutter_cache_manager: ^3.3.1
   connectivity_plus: ^7.0.0
   http: ^1.2.2
   mime: ^1.0.6
-  permission_handler: ^11.3.0
-  path_provider: ^2.1.2
   collection: ^1.18.0
   tusc: ^2.1.0
   path: ^1.9.0
@@ -37,6 +40,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  mocktail: ^1.0.3
 
 flutter:
   uses-material-design: true

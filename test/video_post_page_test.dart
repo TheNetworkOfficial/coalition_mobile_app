@@ -1,12 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:coalition_mobile_app/core/config/backend_config_loader.dart';
+import 'package:coalition_mobile_app/core/config/backend_config_loader.dart'
+    show BackendConfig;
 import 'package:coalition_mobile_app/core/config/backend_config_provider.dart';
-import 'package:coalition_mobile_app/features/video/models/video_draft.dart';
 import 'package:coalition_mobile_app/features/video/models/video_timeline.dart';
 import 'package:coalition_mobile_app/features/video/platform/video_native.dart';
-import 'package:coalition_mobile_app/features/video/providers/video_draft_provider.dart';
+import 'package:coalition_mobile_app/features/video/providers/video_timeline_provider.dart';
 import 'package:coalition_mobile_app/features/video/services/mux_upload_service.dart';
 import 'package:coalition_mobile_app/features/video/views/video_post_page.dart';
 import 'package:flutter/material.dart';
@@ -117,15 +117,6 @@ class _StubVideoNative extends VideoNativeBridge {
   Future<void> cancelExport() async {}
 }
 
-class _SeededVideoDraftsNotifier extends VideoDraftsNotifier {
-  _SeededVideoDraftsNotifier(this.initialState);
-
-  final VideoDraftState initialState;
-
-  @override
-  VideoDraftState build() => initialState;
-}
-
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -146,17 +137,10 @@ void main() {
     final coverFile = File('${tempDir.path}/cover.png')
       ..writeAsBytesSync(List<int>.generate(16, (index) => 255 - index));
 
-    final timeline = VideoTimeline(
-      sourcePath: sourceFile.path,
+    final timeline = const VideoTimeline(
       trimStartMs: 1000,
       trimEndMs: 5000,
       coverTimeMs: 1500,
-    );
-
-    final draft = VideoDraft(id: 'draft-1', timeline: timeline);
-    final draftState = VideoDraftState(
-      activeDraftId: draft.id,
-      drafts: {draft.id: draft},
     );
 
     final native = _StubVideoNative(
@@ -171,9 +155,6 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          videoDraftsProvider.overrideWith(
-            () => _SeededVideoDraftsNotifier(draftState),
-          ),
           muxUploadServiceProvider.overrideWithValue(muxService),
           backendConfigProvider.overrideWithValue(
             BackendConfig(baseUri: Uri.parse('https://api.example.com/')),
@@ -181,7 +162,12 @@ void main() {
           videoNativeProvider.overrideWithValue(native),
         ],
         child: MaterialApp(
-          home: VideoPostPage(httpClientOverride: httpClient),
+          home: VideoPostPage(
+            filePath: sourceFile.path,
+            timelineJson: timeline.toJson(),
+            coverPath: coverFile.path,
+            httpClientOverride: httpClient,
+          ),
         ),
       ),
     );
@@ -191,13 +177,13 @@ void main() {
     final state = tester.state(find.byType(VideoPostPage)) as dynamic;
 
     await tester.runAsync(() async {
-      await state.startMuxPostFlowForTesting(timeline);
+      await state.startMuxPostFlowForTesting();
     });
 
     await tester.pump();
 
     expect(native.exportCalls, 1);
-    expect(native.coverCalls, greaterThanOrEqualTo(1));
+    expect(native.coverCalls, isZero);
     expect(muxService.createCalled, isTrue);
     expect(muxService.uploadCalled, isTrue);
 
@@ -212,7 +198,7 @@ void main() {
         httpClient.requests.where((request) => request.method == 'PUT');
     expect(putRequests.length, 1);
 
-    expect(sourceFile.existsSync(), isFalse);
+    expect(sourceFile.existsSync(), isTrue);
     expect(exportedFile.existsSync(), isFalse);
     expect(coverFile.existsSync(), isFalse);
 
@@ -220,6 +206,9 @@ void main() {
       tester.element(find.byType(VideoPostPage)),
       listen: false,
     );
-    expect(container.read(activeVideoTimelineProvider), isNull);
+    final providerTimeline = container.read(videoTimelineProvider);
+    expect(providerTimeline.trimStartMs, timeline.trimStartMs);
+    expect(providerTimeline.trimEndMs, timeline.trimEndMs);
+    expect(providerTimeline.coverTimeMs, timeline.coverTimeMs);
   });
 }
