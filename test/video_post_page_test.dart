@@ -93,6 +93,7 @@ class _StubVideoNative extends VideoNativeBridge {
   final String coverPath;
   int exportCalls = 0;
   int coverCalls = 0;
+  Map<String, dynamic>? lastTimelineJson;
 
   @override
   Future<String> exportEdits({
@@ -101,6 +102,7 @@ class _StubVideoNative extends VideoNativeBridge {
     required int targetBitrateBps,
   }) async {
     exportCalls += 1;
+    lastTimelineJson = timelineJson;
     return exportPath;
   }
 
@@ -198,6 +200,22 @@ void main() {
         httpClient.requests.where((request) => request.method == 'PUT');
     expect(putRequests.length, 1);
 
+    final backendRequest = httpClient.requests
+        .whereType<http.Request>()
+        .singleWhere(
+          (request) =>
+              request.method == 'POST' &&
+              request.url.path.endsWith('posts/video'),
+        );
+
+    final backendPayload =
+        jsonDecode(backendRequest.body) as Map<String, dynamic>;
+    expect(backendPayload['timeline'], timeline.toJson());
+    expect(
+      backendPayload['transformer_timeline'],
+      timeline.toTransformerJson(),
+    );
+
     expect(sourceFile.existsSync(), isTrue);
     expect(exportedFile.existsSync(), isFalse);
     expect(coverFile.existsSync(), isFalse);
@@ -210,5 +228,12 @@ void main() {
     expect(providerTimeline.trimStartMs, timeline.trimStartMs);
     expect(providerTimeline.trimEndMs, timeline.trimEndMs);
     expect(providerTimeline.coverTimeMs, timeline.coverTimeMs);
+
+    expect(native.lastTimelineJson, {
+      'trim': {
+        'startSeconds': 1.0,
+        'endSeconds': 5.0,
+      },
+    });
   });
 }

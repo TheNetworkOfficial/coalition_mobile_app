@@ -48,6 +48,25 @@ class VideoTimeline {
     };
   }
 
+  Map<String, dynamic> toTransformerJson() {
+    final trimStartSeconds = trimStartMs / 1000.0;
+    final trimEndSeconds = trimEndMs / 1000.0;
+    return {
+      'trim': {
+        'startSeconds': trimStartSeconds,
+        'endSeconds': trimEndSeconds,
+      },
+      if (cropRect != null)
+        'crop': {
+          'left': cropRect!.left,
+          'top': cropRect!.top,
+          'right': cropRect!.right,
+          'bottom': cropRect!.bottom,
+        },
+      if (speed != 1.0) 'speed': speed,
+    };
+  }
+
   static VideoTimeline fromJson(Map<String, dynamic> json) {
     Rect? rect;
     final crop = json['cropRect'];

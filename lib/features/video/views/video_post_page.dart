@@ -196,7 +196,7 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
     final native = ref.read(videoNativeProvider);
     final exportedPath = await native.exportEdits(
       filePath: widget.filePath,
-      timelineJson: _timeline.toJson(),
+      timelineJson: _timeline.toTransformerJson(),
       targetBitrateBps: 6_000_000,
     );
 
@@ -342,6 +342,7 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
       'mux_upload_id': uploadId,
       'cover_url': coverUrl,
       'timeline': _timeline.toJson(),
+      'transformer_timeline': _timeline.toTransformerJson(),
     };
 
     final response = await _httpClient.post(
