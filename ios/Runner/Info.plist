@@ -42,9 +42,7 @@
                 <string>UIInterfaceOrientationLandscapeRight</string>
         </array>
         <key>NSPhotoLibraryUsageDescription</key>
-        <string>Allow access to your photo library to pick and edit videos.</string>
-        <key>NSCameraUsageDescription</key>
-        <string>Allow camera access to record videos.</string>
+        <string>Allow access to your photo library to update your profile photo.</string>
         <key>CADisableMinimumFrameDurationOnPhone</key>
         <true/>
         <key>UIApplicationSupportsIndirectInputEvents</key>

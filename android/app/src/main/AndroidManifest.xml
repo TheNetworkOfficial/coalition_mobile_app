@@ -1,8 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- API 33+: granular media permissions -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
-    <uses-permission android:name="android.permission.CAMERA" />
     <!-- API 32 and below: legacy external storage access -->
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"

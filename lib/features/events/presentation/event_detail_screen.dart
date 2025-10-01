@@ -341,13 +341,7 @@ class _EventHeader extends StatelessWidget {
             mediaType: event.mediaType,
             aspectRatio: event.mediaAspectRatio ?? 16 / 9,
             coverImagePath: event.coverImagePath,
-            overlays: event.overlays,
             autoplay: true,
-            videoTracks: [
-              if (event.adaptiveMediaStream != null)
-                event.adaptiveMediaStream!,
-              ...event.mediaFallbackStreams,
-            ],
           ),
           const SizedBox(height: 20),
         ],
