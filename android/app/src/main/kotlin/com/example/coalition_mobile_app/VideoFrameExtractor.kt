@@ -134,7 +134,7 @@ internal class VideoFrameExtractor private constructor(private val appContext: C
                     retriever.setDataSource(parcelFileDescriptor!!.fileDescriptor)
                 }
             }
-            retriever.getFrameAtTime(frameTimeUs, MediaMetadataRetriever.OPTION_CLOSEST)
+            retriever.requestSafeFrame(frameTimeUs)
         } catch (error: Throwable) {
             android.util.Log.w(TAG, "MediaMetadataRetriever threw for $dataSource", error)
             null
@@ -150,6 +150,16 @@ internal class VideoFrameExtractor private constructor(private val appContext: C
                 }
             }
         }
+    }
+
+    private fun MediaMetadataRetriever.requestSafeFrame(requestedFrameTimeUs: Long): Bitmap? {
+        val safeFrameTimeUs = if (requestedFrameTimeUs <= 0L) {
+            DEFAULT_FALLBACK_FRAME_TIME_US
+        } else {
+            requestedFrameTimeUs
+        }
+        return getFrameAtTime(safeFrameTimeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+            ?: getFrameAtTime(safeFrameTimeUs, MediaMetadataRetriever.OPTION_CLOSEST)
     }
 
     private fun attemptWithThumbnailUtils(dataSource: DataSource): Bitmap? {
