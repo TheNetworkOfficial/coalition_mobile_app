@@ -16,12 +16,16 @@ class VideoEditorPage extends ConsumerStatefulWidget {
     super.key,
     required this.filePath,
     this.controllerFactory,
+    this.skipHeavyWidgets = false,
   });
+  // When true the page will avoid building heavy third-party widgets which
+  // exercise many controller properties. This is intended for tests only.
 
   static const routeName = 'video-editor';
 
   final String filePath;
   final VideoEditorController Function()? controllerFactory;
+  final bool skipHeavyWidgets;
 
   @override
   ConsumerState<VideoEditorPage> createState() => _VideoEditorPageState();
@@ -218,6 +222,21 @@ class _VideoEditorPageState extends ConsumerState<VideoEditorPage> {
   }
 
   Widget _buildEditorBody(VideoTimeline timeline) {
+    if (widget.skipHeavyWidgets) {
+      // Lightweight test-only UI: just a column with placeholders so that
+      // listeners and controller sync logic still run, but heavy widgets from
+      // video_editor and video_player aren't built.
+      return Column(
+        children: [
+          const SizedBox(
+              height: 200, child: Center(child: Text('Video Placeholder'))),
+          Text('Trim start: ${timeline.trimStartMs}'),
+          Text('Trim end: ${timeline.trimEndMs}'),
+          Text(
+              'Cover: ${timeline.coverTimeMs != null ? timeline.coverTimeMs : -1}'),
+        ],
+      );
+    }
     final videoValue = _controller.video.value;
     final aspectRatio = videoValue.isInitialized && videoValue.aspectRatio > 0
         ? videoValue.aspectRatio

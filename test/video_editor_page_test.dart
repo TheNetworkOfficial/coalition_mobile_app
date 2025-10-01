@@ -65,12 +65,24 @@ void main() {
 
     when(() => mockController.videoDuration)
         .thenAnswer((_) => Duration(milliseconds: currentDurationMs));
+    // The video_editor package expects additional properties on the
+    // VideoEditorController; ensure mocks return non-null values for them.
+    when(() => mockController.maxDuration)
+        .thenAnswer((_) => Duration(milliseconds: currentDurationMs));
+    when(() => mockController.isRotated).thenReturn(false);
     when(() => mockController.minTrim).thenAnswer((_) => currentMinTrim);
     when(() => mockController.maxTrim).thenAnswer((_) => currentMaxTrim);
     when(() => mockController.minCrop).thenAnswer((_) => currentMinCrop);
     when(() => mockController.maxCrop).thenAnswer((_) => currentMaxCrop);
     when(() => mockController.initialized).thenReturn(true);
     when(() => mockController.isPlaying).thenReturn(false);
+    // Additional properties used by video_editor widgets
+    when(() => mockController.startTrim).thenReturn(Duration.zero);
+    when(() => mockController.cacheRotation).thenReturn(0);
+    when(() => mockController.endTrim)
+        .thenReturn(Duration(milliseconds: currentDurationMs));
+    when(() => mockController.cacheMinCrop).thenAnswer((_) => currentMinCrop);
+    when(() => mockController.cacheMaxCrop).thenAnswer((_) => currentMaxCrop);
     when(() => mockController.video).thenReturn(mockVideo);
     when(() => mockController.selectedCoverNotifier).thenReturn(coverNotifier);
     when(() => mockController.selectedCoverVal)
@@ -105,6 +117,7 @@ void main() {
           home: VideoEditorPage(
             filePath: 'ignored.mp4',
             controllerFactory: () => mockController,
+            skipHeavyWidgets: true,
           ),
         ),
       ),

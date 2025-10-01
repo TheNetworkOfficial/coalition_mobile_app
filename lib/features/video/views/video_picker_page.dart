@@ -117,7 +117,12 @@ class _VideoPickerPageState extends ConsumerState<VideoPickerPage> {
         return;
       }
 
-      final local = await _ensureLocalCopy(picked);
+      // If an override is provided we assume the file is already local for
+      // testing purposes and skip copying to a temp directory which may interact
+      // with platform channels in tests.
+      final local = widget.galleryPickerOverride != null
+          ? picked
+          : await _ensureLocalCopy(picked);
       if (!mounted) {
         return;
       }
@@ -190,7 +195,9 @@ class _VideoPickerPageState extends ConsumerState<VideoPickerPage> {
         }
         return;
       }
-      final local = await _ensureLocalCopy(picked);
+      final local = widget.cameraPickerOverride != null
+          ? picked
+          : await _ensureLocalCopy(picked);
       if (!mounted) {
         return;
       }
