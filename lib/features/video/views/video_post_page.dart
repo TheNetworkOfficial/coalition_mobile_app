@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -8,15 +9,23 @@ import 'package:http/http.dart' as http;
 import '../../../core/config/backend_config_provider.dart';
 import '../models/video_timeline.dart';
 import '../platform/video_native.dart';
-import '../providers/video_draft_provider.dart';
+import '../providers/video_timeline_provider.dart';
 import '../services/mux_upload_service.dart';
 
 class VideoPostPage extends ConsumerStatefulWidget {
-  const VideoPostPage({super.key, this.draftId, this.httpClientOverride});
+  const VideoPostPage({
+    super.key,
+    required this.filePath,
+    required this.timelineJson,
+    this.coverPath,
+    this.httpClientOverride,
+  });
 
   static const routeName = 'video-post';
 
-  final String? draftId;
+  final String filePath;
+  final Map<String, dynamic> timelineJson;
+  final String? coverPath;
   final http.Client? httpClientOverride;
 
   @override
@@ -29,6 +38,7 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
   _PostStage _stage = _PostStage.idle;
   final _captionController = TextEditingController();
   late final http.Client _httpClient;
+  late VideoTimeline _timeline;
   bool _isPrivate = false;
   bool _uploadFailed = false;
   double _uploadProgress = 0;
@@ -43,9 +53,8 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
   void initState() {
     super.initState();
     _httpClient = widget.httpClientOverride ?? http.Client();
-    if (widget.draftId != null) {
-      ref.read(videoDraftsProvider.notifier).setActiveDraft(widget.draftId);
-    }
+    _timeline = VideoTimeline.fromJson(widget.timelineJson);
+    _localCoverPath = widget.coverPath;
   }
 
   @override
@@ -55,7 +64,7 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
     super.dispose();
   }
 
-  Future<void> _onPostPressed(VideoTimeline timeline) async {
+  Future<void> _onPostPressed() async {
     if (!kUseMux) {
       setState(() {
         _errorMessage = 'Video uploads are currently unavailable.';
@@ -63,38 +72,19 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
       return;
     }
 
-    await _startMuxPostFlow(timeline);
+    // Ensure the provider mirrors the finalized timeline for any listeners.
+    ref.read(videoTimelineProvider.notifier).setTrim(
+          startMs: _timeline.trimStartMs,
+          endMs: _timeline.trimEndMs,
+        );
+    ref.read(videoTimelineProvider.notifier).setCrop(_timeline.cropRect);
+    ref.read(videoTimelineProvider.notifier).setSpeed(_timeline.speed);
+    ref.read(videoTimelineProvider.notifier).setCover(_timeline.coverTimeMs);
+
+    await _startMuxPostFlow();
   }
 
-  Map<String, dynamic> _buildTimelineJson(VideoTimeline timeline) {
-    final map = <String, dynamic>{};
-
-    final trimStart = timeline.trimStartMs;
-    final trimEnd = timeline.trimEndMs;
-    if (trimStart != null || trimEnd != null) {
-      map['trim'] = <String, dynamic>{
-        if (trimStart != null) 'startSeconds': trimStart / 1000,
-        if (trimEnd != null) 'endSeconds': trimEnd / 1000,
-      };
-    }
-
-    final crop = timeline.cropRect;
-    if (crop != null) {
-      map['crop'] = <String, dynamic>{
-        'left': crop.left,
-        'top': crop.top,
-        'right': crop.right,
-        'bottom': crop.bottom,
-      };
-    }
-
-    // Additional effects, filters, and overlays can be serialized here as they
-    // are implemented in the editing flow.
-
-    return map;
-  }
-
-  Future<void> _startMuxPostFlow(VideoTimeline timeline) async {
+  Future<void> _startMuxPostFlow() async {
     final existing = _exportedVideoFile;
     var hasExported = false;
     if (existing != null && existing.existsSync()) {
@@ -123,8 +113,8 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
     var postAttempted = false;
 
     try {
-      final videoFile = await _ensureExportedVideo(timeline);
-      final coverPath = await _ensureCoverImage(timeline);
+      final videoFile = await _ensureExportedVideo();
+      final coverPath = await _ensureCoverImage();
       final coverUrl = await _ensureCoverUpload(coverPath);
       final ticket = await _ensureMuxTicket(videoFile);
 
@@ -144,12 +134,8 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
       await _postToBackend(
         uploadId: ticket.uploadId,
         coverUrl: coverUrl,
-        timeline: timeline,
       );
 
-      await ref
-          .read(videoDraftsProvider.notifier)
-          .clearActiveDraft(deleteAssets: true);
       await _purgeLocalScratchFiles();
 
       if (!mounted) {
@@ -160,7 +146,6 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
       );
       Navigator.of(context).pop();
     } catch (error, stackTrace) {
-      // In a production environment this would be reported to crash logging.
       debugPrint('Failed to post video: $error\n$stackTrace');
       final isTusTicket = _currentTicket?.isTus == true;
       if (!mounted) {
@@ -177,16 +162,16 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
           _currentTicket = null;
         }
         _errorMessage = _messageForError(
-            uploadAttempted: uploadAttempted,
-            postAttempted: postAttempted,
-            isTusTicket: isTusTicket);
+          uploadAttempted: uploadAttempted,
+          postAttempted: postAttempted,
+          isTusTicket: isTusTicket,
+        );
       });
     }
   }
 
   @visibleForTesting
-  Future<void> startMuxPostFlowForTesting(VideoTimeline timeline) =>
-      _startMuxPostFlow(timeline);
+  Future<void> startMuxPostFlowForTesting() => _startMuxPostFlow();
 
   String _messageForError({
     required bool uploadAttempted,
@@ -204,17 +189,16 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
     return 'Failed to prepare video. Please try again.';
   }
 
-  Future<File> _ensureExportedVideo(VideoTimeline timeline) async {
+  Future<File> _ensureExportedVideo() async {
     final existing = _exportedVideoFile;
     if (existing != null && await existing.exists()) {
       return existing;
     }
 
-    final timelineJson = _buildTimelineJson(timeline);
     final native = ref.read(videoNativeProvider);
     final exportedPath = await native.exportEdits(
-      filePath: timeline.sourcePath,
-      timelineJson: timelineJson,
+      filePath: widget.filePath,
+      timelineJson: _timeline.toJson(),
       targetBitrateBps: 6_000_000,
     );
 
@@ -224,8 +208,8 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
     return file;
   }
 
-  Future<String> _ensureCoverImage(VideoTimeline timeline) async {
-    final cached = _localCoverPath ?? timeline.coverImagePath;
+  Future<String> _ensureCoverImage() async {
+    final cached = _localCoverPath ?? widget.coverPath;
     if (cached != null && cached.isNotEmpty) {
       if (_isRemoteAsset(cached)) {
         return cached;
@@ -237,11 +221,10 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
       }
     }
 
-    final seconds = (timeline.coverTimeMs ?? 0) / 1000;
     final native = ref.read(videoNativeProvider);
     final coverPath = await native.generateCoverImage(
-      timeline.sourcePath,
-      seconds: seconds,
+      widget.filePath,
+      seconds: _timeline.coverTimeMs / 1000,
     );
     _localCoverPath = coverPath;
     return coverPath;
@@ -353,7 +336,6 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
   Future<void> _postToBackend({
     required String uploadId,
     required String coverUrl,
-    required VideoTimeline timeline,
   }) async {
     final uri = _resolveBackendUri('posts/video');
     final payload = {
@@ -361,7 +343,7 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
       'is_private': _isPrivate,
       'mux_upload_id': uploadId,
       'cover_url': coverUrl,
-      'timeline': _buildTimelineJson(timeline),
+      'timeline': _timeline.toJson(),
     };
 
     final response = await _httpClient.post(
@@ -468,7 +450,6 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
 
   @override
   Widget build(BuildContext context) {
-    final timeline = ref.watch(activeVideoTimelineProvider);
     final isBusy = _stage == _PostStage.exporting ||
         _stage == _PostStage.uploading ||
         _stage == _PostStage.processing;
@@ -476,7 +457,7 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
         _stage == _PostStage.uploading ? _uploadProgress.clamp(0.0, 1.0) : null;
     final buttonLabel = _primaryButtonLabel();
     final VoidCallback? buttonOnPressed =
-        timeline == null || isBusy ? null : () => _onPostPressed(timeline);
+        isBusy || widget.filePath.isEmpty ? null : _onPostPressed;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Post video')),

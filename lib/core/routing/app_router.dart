@@ -139,18 +139,42 @@ final goRouterProvider = Provider<GoRouter>((ref) {
             path: 'editor',
             name: VideoEditorPage.routeName,
             builder: (context, state) {
-              final draftId =
-                  state.extra is String ? state.extra as String : null;
-              return VideoEditorPage(draftId: draftId);
+              final extra = state.extra;
+              final filePath = extra is Map<String, dynamic>
+                  ? extra['filePath'] as String?
+                  : null;
+              if (filePath == null || filePath.isEmpty) {
+                return const Scaffold(
+                  body: Center(child: Text('Select a video to edit.')),
+                );
+              }
+              return VideoEditorPage(filePath: filePath);
             },
           ),
           GoRoute(
             path: 'post',
             name: VideoPostPage.routeName,
             builder: (context, state) {
-              final draftId =
-                  state.extra is String ? state.extra as String : null;
-              return VideoPostPage(draftId: draftId);
+              final extra = state.extra;
+              if (extra is Map<String, dynamic>) {
+                final filePath = extra['filePath'] as String? ?? '';
+                final timelineJson =
+                    (extra['timelineJson'] as Map<String, dynamic>?) ?? const {};
+                final coverPath = extra['coverPath'] as String?;
+                if (filePath.isEmpty || timelineJson.isEmpty) {
+                  return const Scaffold(
+                    body: Center(child: Text('Missing video context.')),
+                  );
+                }
+                return VideoPostPage(
+                  filePath: filePath,
+                  timelineJson: timelineJson,
+                  coverPath: coverPath,
+                );
+              }
+              return const Scaffold(
+                body: Center(child: Text('Missing video context.')),
+              );
             },
           ),
         ],

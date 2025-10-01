@@ -1,3 +1,5 @@
+import kotlin.math.max
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -7,7 +9,7 @@ plugins {
 
 android {
     namespace = "com.example.coalition_mobile_app"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = max(flutter.compileSdkVersion, 34)
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -25,7 +27,7 @@ android {
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        targetSdk = max(flutter.targetSdkVersion, 33)
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
