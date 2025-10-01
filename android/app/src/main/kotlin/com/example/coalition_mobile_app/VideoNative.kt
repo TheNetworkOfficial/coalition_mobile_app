@@ -304,8 +304,27 @@ class VideoNative(
                 val top = (crop["top"] as? Number)?.toFloat() ?: 0f
                 val right = (crop["right"] as? Number)?.toFloat() ?: 1f
                 val bottom = (crop["bottom"] as? Number)?.toFloat() ?: 1f
-                android.util.Log.d(TAG, "buildEditedMediaItem: crop values left=$left top=$top right=$right bottom=$bottom")
-                videoEffects += Crop(left, top, right, bottom)
+
+                val sanitizedLeft = left.coerceIn(0f, 1f)
+                val sanitizedTop = top.coerceIn(0f, 1f)
+                val sanitizedRight = right.coerceIn(0f, 1f)
+                val sanitizedBottom = bottom.coerceIn(0f, 1f)
+
+                val hasValidArea = sanitizedRight > sanitizedLeft && sanitizedBottom > sanitizedTop
+
+                android.util.Log.d(
+                    TAG,
+                    "buildEditedMediaItem: crop values left=$sanitizedLeft top=$sanitizedTop right=$sanitizedRight bottom=$sanitizedBottom hasValidArea=$hasValidArea",
+                )
+
+                if (hasValidArea) {
+                    videoEffects += Crop(sanitizedLeft, sanitizedTop, sanitizedRight, sanitizedBottom)
+                } else {
+                    android.util.Log.w(
+                        TAG,
+                        "buildEditedMediaItem: Ignoring invalid crop with zero/negative area $crop",
+                    )
+                }
             } catch (iae: IllegalArgumentException) {
                 android.util.Log.e(TAG, "buildEditedMediaItem: Crop construction failed with crop=$crop", iae)
                 throw iae
