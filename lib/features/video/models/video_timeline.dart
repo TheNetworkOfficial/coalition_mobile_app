@@ -1,6 +1,19 @@
 import 'dart:ui';
 
 class VideoTimeline {
+  static const double _cropEpsilon = 1e-4;
+
+  static bool _hasMeaningfulArea(Rect rect) {
+    return rect.width > _cropEpsilon && rect.height > _cropEpsilon;
+  }
+
+  static bool _isApproximatelyFullFrame(Rect rect) {
+    return rect.left <= _cropEpsilon &&
+        rect.top <= _cropEpsilon &&
+        (1.0 - rect.right) <= _cropEpsilon &&
+        (1.0 - rect.bottom) <= _cropEpsilon;
+  }
+
   final int trimStartMs;
   final int trimEndMs;
   final Rect? cropRect;
@@ -33,15 +46,19 @@ class VideoTimeline {
   }
 
   Map<String, dynamic> toJson() {
+    final crop = cropRect;
+    final includeCrop =
+        crop != null && _hasMeaningfulArea(crop) && !_isApproximatelyFullFrame(crop);
+
     return {
       'trimStartMs': trimStartMs,
       'trimEndMs': trimEndMs,
-      if (cropRect != null)
+      if (includeCrop)
         'cropRect': {
-          'left': cropRect!.left,
-          'top': cropRect!.top,
-          'right': cropRect!.right,
-          'bottom': cropRect!.bottom,
+          'left': crop!.left,
+          'top': crop.top,
+          'right': crop.right,
+          'bottom': crop.bottom,
         },
       'speed': speed,
       'coverTimeMs': coverTimeMs,
@@ -51,17 +68,20 @@ class VideoTimeline {
   Map<String, dynamic> toTransformerJson() {
     final trimStartSeconds = trimStartMs / 1000.0;
     final trimEndSeconds = trimEndMs / 1000.0;
+    final crop = cropRect;
+    final includeCrop =
+        crop != null && _hasMeaningfulArea(crop) && !_isApproximatelyFullFrame(crop);
     return {
       'trim': {
         'startSeconds': trimStartSeconds,
         'endSeconds': trimEndSeconds,
       },
-      if (cropRect != null)
+      if (includeCrop)
         'crop': {
-          'left': cropRect!.left,
-          'top': cropRect!.top,
-          'right': cropRect!.right,
-          'bottom': cropRect!.bottom,
+          'left': crop!.left,
+          'top': crop.top,
+          'right': crop.right,
+          'bottom': crop.bottom,
         },
       if (speed != 1.0) 'speed': speed,
     };
