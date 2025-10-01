@@ -63,7 +63,8 @@ void main() {
     await tester.pump();
 
     await tester.tap(find.text('Pick from gallery'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.text('Editor:${pickedFile.path}'), findsOneWidget);
   });

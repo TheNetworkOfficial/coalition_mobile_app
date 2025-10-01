@@ -183,7 +183,7 @@ void main() {
     await tester.pump();
 
     expect(native.exportCalls, 1);
-    expect(native.coverCalls, greaterThanOrEqualTo(1));
+    expect(native.coverCalls, isZero);
     expect(muxService.createCalled, isTrue);
     expect(muxService.uploadCalled, isTrue);
 

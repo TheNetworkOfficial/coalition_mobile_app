@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:video_editor/domain/entities/cover_data.dart';
 import 'package:video_editor/video_editor.dart';
 import 'package:video_player/video_player.dart';
 

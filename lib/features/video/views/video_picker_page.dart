@@ -83,6 +83,9 @@ class _VideoPickerPageState extends ConsumerState<VideoPickerPage> {
       return;
     }
 
+    if (!mounted) {
+      return;
+    }
     if (!permissionResult.granted) {
       _handlePermissionDenied(permissionResult);
       return;
@@ -99,6 +102,9 @@ class _VideoPickerPageState extends ConsumerState<VideoPickerPage> {
       if (picked == null) {
         setState(() => _isProcessing = false);
         if (widget.galleryPickerOverride == null) {
+          if (!mounted) {
+            return;
+          }
           _showError('Unable to access the selected video.');
         }
         return;
@@ -112,10 +118,16 @@ class _VideoPickerPageState extends ConsumerState<VideoPickerPage> {
       _goToEditor(local.path);
     } on PlatformException catch (error) {
       setState(() => _isProcessing = false);
+      if (!mounted) {
+        return;
+      }
       _showError(error.message ?? 'Unable to pick video.');
     } catch (error, stackTrace) {
       debugPrint('Failed to pick gallery video: $error\n$stackTrace');
       setState(() => _isProcessing = false);
+      if (!mounted) {
+        return;
+      }
       _showError('Unable to access the selected video.');
     }
   }
@@ -134,12 +146,18 @@ class _VideoPickerPageState extends ConsumerState<VideoPickerPage> {
       return;
     }
 
+    if (!mounted) {
+      return;
+    }
     if (!mediaPermission.granted) {
       _handlePermissionDenied(mediaPermission);
       return;
     }
 
     final cameraPermission = await permissionService.ensureCameraGranted();
+    if (!mounted) {
+      return;
+    }
     if (!cameraPermission.granted) {
       _handlePermissionDenied(cameraPermission);
       return;
@@ -156,6 +174,9 @@ class _VideoPickerPageState extends ConsumerState<VideoPickerPage> {
       if (picked == null) {
         setState(() => _isProcessing = false);
         if (widget.cameraPickerOverride == null) {
+          if (!mounted) {
+            return;
+          }
           _showError('Unable to access the recorded video.');
         }
         return;
@@ -168,10 +189,16 @@ class _VideoPickerPageState extends ConsumerState<VideoPickerPage> {
       _goToEditor(local.path);
     } on PlatformException catch (error) {
       setState(() => _isProcessing = false);
+      if (!mounted) {
+        return;
+      }
       _showError(error.message ?? 'Unable to record video.');
     } catch (error, stackTrace) {
       debugPrint('Failed to record video: $error\n$stackTrace');
       setState(() => _isProcessing = false);
+      if (!mounted) {
+        return;
+      }
       _showError('Unable to record video.');
     }
   }
