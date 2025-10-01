@@ -58,7 +58,7 @@ class VideoTimeline {
         'bottom': crop.bottom,
       };
     }
-
+    
     return {
       'trimStartMs': trimStartMs,
       'trimEndMs': trimEndMs,
