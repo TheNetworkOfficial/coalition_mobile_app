@@ -155,33 +155,23 @@ internal class VideoFrameExtractor private constructor(private val appContext: C
     private fun attemptWithThumbnailUtils(dataSource: DataSource): Bitmap? {
         val prepared = dataSource.prepareLocalCopy(appContext)
         val cleanup = prepared.cleanup
-        var legacyTemp: File? = null
-        try {
+        return try {
             val uri = prepared.uri
-            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val signal = CancellationSignal()
-                ThumbnailUtils.createVideoThumbnail(appContext.contentResolver, uri, Size(DEFAULT_TARGET_SIZE, DEFAULT_TARGET_SIZE), signal)
+            val isContentUri = uri.scheme?.equals("content", ignoreCase = true) == true
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && isContentUri) {
+                val cancellationSignal: CancellationSignal? = null
+                runCatching {
+                    ThumbnailUtils.createVideoThumbnail(
+                        appContext.contentResolver,
+                        uri,
+                        Size(DEFAULT_TARGET_SIZE, DEFAULT_TARGET_SIZE),
+                        cancellationSignal,
+                    )
+                }.getOrNull()
             } else {
-                val path = when (uri.scheme?.lowercase()) {
-                    "content" -> {
-                        legacyTemp = copyUriToTempFile(uri)
-                        legacyTemp?.absolutePath
-                    }
-                    "file" -> uri.path
-                    else -> uri.path
-                }
-                if (path != null) {
-                    ThumbnailUtils.createVideoThumbnail(path, MediaStore.Images.Thumbnails.MINI_KIND)
-                } else {
-                    null
-                }
+                null
             }
         } finally {
-            legacyTemp?.let {
-                if (!it.delete()) {
-                    android.util.Log.d(TAG, "Temporary legacy thumbnail ${it.absolutePath} could not be deleted")
-                }
-            }
             cleanup?.invoke()
         }
     }
