@@ -70,16 +70,22 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
       return;
     }
 
-    // Ensure the provider mirrors the finalized timeline for any listeners.
-    ref.read(videoTimelineProvider.notifier).setTrim(
-          startMs: _timeline.trimStartMs,
-          endMs: _timeline.trimEndMs,
-        );
-    ref.read(videoTimelineProvider.notifier).setCrop(_timeline.cropRect);
-    ref.read(videoTimelineProvider.notifier).setSpeed(_timeline.speed);
-    ref.read(videoTimelineProvider.notifier).setCover(_timeline.coverTimeMs);
+    _syncTimelineProvider();
 
     await _startMuxPostFlow();
+  }
+
+  void _syncTimelineProvider() {
+    // Ensure the provider mirrors the finalized timeline for any listeners.
+    final notifier = ref.read(videoTimelineProvider.notifier);
+    notifier
+      ..setTrim(
+        startMs: _timeline.trimStartMs,
+        endMs: _timeline.trimEndMs,
+      )
+      ..setCrop(_timeline.cropRect)
+      ..setSpeed(_timeline.speed)
+      ..setCover(_timeline.coverTimeMs);
   }
 
   Future<void> _startMuxPostFlow() async {
@@ -169,7 +175,10 @@ class _VideoPostPageState extends ConsumerState<VideoPostPage> {
   }
 
   @visibleForTesting
-  Future<void> startMuxPostFlowForTesting() => _startMuxPostFlow();
+  Future<void> startMuxPostFlowForTesting() {
+    _syncTimelineProvider();
+    return _startMuxPostFlow();
+  }
 
   String _messageForError({
     required bool uploadAttempted,
