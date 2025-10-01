@@ -3,7 +3,6 @@ import kotlin.math.max
 plugins {
     id("com.android.application")
     id("kotlin-android")
-    id("kotlin-kapt")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
@@ -46,13 +45,4 @@ flutter {
     source = "../.."
 }
 
-dependencies {
-    implementation("androidx.media3:media3-common:1.5.1")
-    implementation("androidx.media3:media3-exoplayer:1.5.1")
-    implementation("androidx.media3:media3-transformer:1.5.1")
-    implementation("androidx.media3:media3-effect:1.5.1")
-    implementation("androidx.media3:media3-muxer:1.5.1")
-    // Glide runtime dependency required so the Glide annotations are present at compile time for KAPT
-    implementation("com.github.bumptech.glide:glide:4.16.0")
-    kapt("com.github.bumptech.glide:compiler:4.16.0")
-}
+dependencies {}

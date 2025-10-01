@@ -1,8 +1,0 @@
-{
-  "Rules": [{
-    "ID": "ExpireDevVideos",
-    "Prefix": "videos/",
-    "Status": "Enabled",
-    "Expiration": { "Days": 30 }
-  }]
-}

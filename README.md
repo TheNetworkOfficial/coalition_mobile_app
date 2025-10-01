@@ -155,45 +155,7 @@ Consider adding `integration_test/` suites once APIs are wired up.
 
 ---
 
-## 6. Video Delivery Pipeline
-
-Long-form uploads now mirror TikTok's thin-client approach:
-
-1. **Create an upload session.** The Flutter app posts the post metadata to `POST /videos/sessions` on the backend defined in `assets/config/backend_config.json`. The response includes a `sessionId`, `jobId`, and presigned S3 `PUT` URLs for the raw capture and optional baked cover image.
-2. **Direct-to-cloud upload.** Flutter streams the original video and cover to the provided S3 URLs. The client never performs ffmpeg work; it simply pushes the capture to cloud storage.
-3. **Finalize & enqueue.** After both uploads complete, the client calls `POST /videos/sessions/{sessionId}/complete`. The backend enqueues a Lambda→S3→MediaConvert (or ECS) job to generate renditions and thumbnails.
-4. **Job polling.** Flutter immediately marks the new feed item as `processing`, then polls `GET /api/videos/:jobId` until the backend reports `ready` with CDN URLs.
-5. **Adaptive playback.** When ready, the feed swaps in the CloudFront manifest and renders it with `AdaptiveVideoPlayer`, falling back to MP4 or the original file only if processing fails.
-
-### 6.1 App configuration
-
-A single JSON asset controls runtime wiring:
-
-```bash
-cp assets/config/backend_config.json assets/config/backend_config.local.json # example backup
-```
-
-- `backend_config.json` – `{"baseUrl": "http://10.0.2.2:3001/api/"}` targets the local Express server. Point this at your API Gateway stage when you move to AWS.
-
-### 6.2 Backend contract checklist
-
-Regardless of implementation, the `/videos` resource should:
-
-- Accept `POST /videos/sessions` with JSON metadata (`description`, `hashtags`, `visibility`, etc.) and return `sessionId`, `jobId`, and presigned upload targets for the raw video plus optional cover image.
-- Honour the client's presigned `PUT` uploads (the response must include `contentType`, headers, and an `objectKey` so the client can confirm completion).
-- Process `POST /videos/sessions/{sessionId}/complete` by enqueueing your transcoding workflow and respond with the initial job payload (`{ "jobId": "uuid", "status": "processing" }`).
-- Publish finished assets at stable URLs (e.g., `/media/<jobId>/master.m3u8`) so the client can resolve them against your CDN domain.
-- Surface failure reasons so the app can show a friendly error and let users retry.
-
-### 6.3 Player expectations
-
-- The feed prefers the adaptive manifest first; manual quality selection is available when multiple renditions exist.
-- Placeholder states (`processing`, `failed`) render until the manifest is reachable, so users never hit a blank player.
-- Legacy posts without remote URLs still play from local paths, but plan on re-publishing them once the CDN is live.
-
----
-
-## 7. Troubleshooting
+## 6. Troubleshooting
 
 | Symptom | Likely Fix |
 | --- | --- |
@@ -229,14 +191,5 @@ flutter run -d <actual-device-id> # Mobile device/emulator (replace placeholder)
 # Run tests
 flutter test
 ```
-
----
-
-## Video Pipeline Migration
-
-- Editing stays non-destructive: timeline data lives in `VideoTimeline` until you tap **Post**.
-- Exports now happen on-demand during posting via `VideoNative.exportEdits`.
-- Upload provider defaults to Mux with a Cloudflare Stream backend path—adjust as needed before launch.
-- Change upload settings in `lib/features/video/services/mux_upload_service.dart` (see `kUseMux`) and update API targets in `assets/config/backend_config.json`.
 
 Happy building!

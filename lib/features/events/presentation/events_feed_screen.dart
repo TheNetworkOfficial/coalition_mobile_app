@@ -989,14 +989,8 @@ class EventCard extends StatelessWidget {
         padding: const EdgeInsets.only(bottom: 16),
         child: EventMediaPreview(
           mediaUrl: media,
-          mediaType: event.mediaType,
           aspectRatio: event.mediaAspectRatio ?? 16 / 9,
           coverImagePath: event.coverImagePath,
-          overlays: event.overlays,
-          videoTracks: [
-            if (event.adaptiveMediaStream != null) event.adaptiveMediaStream!,
-            ...event.mediaFallbackStreams,
-          ],
         ),
       );
     }

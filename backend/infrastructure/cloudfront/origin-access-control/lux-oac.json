@@ -1,7 +1,0 @@
-{
-  "Name": "lux-oac",
-  "Description": "OAC for lux-video-dev-262a61d7",
-  "SigningProtocol": "sigv4",
-  "SigningBehavior": "always",
-  "OriginAccessControlOriginType": "s3"
-}
