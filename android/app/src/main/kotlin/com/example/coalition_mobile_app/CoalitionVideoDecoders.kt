@@ -38,14 +38,43 @@ internal class CoalitionParcelFileDescriptorVideoDecoder(
         val frameTimeUs = sanitizeFrameTimeUs(requestedFrame)
         val targetSize = computeTargetSize(outWidth, outHeight)
 
-        return try {
+        return runCatching {
             val bitmap = extractor.extractFrameFromFileDescriptor(data, frameTimeUs, targetSize)
             BitmapResource.obtain(bitmap, bitmapPool)
                 ?: throw IOException("Unable to obtain bitmap resource")
-        } catch (error: Throwable) {
+        }.getOrElse { error ->
             android.util.Log.w(TAG, "ParcelFileDescriptor decode failed", error)
-            throw IOException("Unable to decode video frame", error)
+            val placeholder = makePlaceholderBitmap()
+            BitmapResource.obtain(placeholder, bitmapPool)
+                ?: BitmapResource(placeholder, bitmapPool)
         }
+    }
+
+    private fun makePlaceholderBitmap(size: Int = 80): Bitmap {
+        val dimension = if (size > 0) size else 80
+        val bitmap = Bitmap.createBitmap(dimension, dimension, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+
+        canvas.drawColor(0xFFE0E0E0.toInt())
+
+        val trianglePaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0xFF424242.toInt()
+            style = android.graphics.Paint.Style.FILL
+        }
+
+        val path = android.graphics.Path().apply {
+            val left = dimension * 0.35f
+            val top = dimension * 0.25f
+            val right = dimension * 0.65f
+            val bottom = dimension * 0.75f
+            moveTo(left, top)
+            lineTo(right, dimension * 0.5f)
+            lineTo(left, bottom)
+            close()
+        }
+
+        canvas.drawPath(path, trianglePaint)
+        return bitmap
     }
 
     private fun sanitizeFrameTimeUs(requested: Long): Long {

@@ -22,9 +22,10 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.util.concurrent.Callable
 import java.util.concurrent.CountDownLatch
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
 import java.util.concurrent.Future
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
@@ -89,6 +90,24 @@ internal class VideoFrameExtractor private constructor(private val appContext: C
         targetSizePx: Int,
     ): Bitmap {
         val sanitizedFrameTimeUs = sanitizeFrameTime(requestedFrameTimeUs)
+        if (dataSource is DataSource.UriSource) {
+            val resolverThumbnail = attemptWithContentResolverLoadThumbnail(appContext, dataSource.uri)
+            if (resolverThumbnail != null) {
+                return maybeScale(resolverThumbnail, targetSizePx)
+            }
+        }
+
+        val thumbnailResult = try {
+            attemptWithThumbnailUtils(dataSource)
+        } catch (error: Throwable) {
+            android.util.Log.w(TAG, "ThumbnailUtils fallback failed for $dataSource", error)
+            null
+        }
+
+        if (thumbnailResult != null) {
+            return maybeScale(thumbnailResult, targetSizePx)
+        }
+
         val retrieverResult = try {
             runWithTimeout(DECODE_TIMEOUT_MS) {
                 attemptWithMediaMetadataRetriever(dataSource, sanitizedFrameTimeUs)
@@ -105,17 +124,6 @@ internal class VideoFrameExtractor private constructor(private val appContext: C
             return maybeScale(retrieverResult, targetSizePx)
         }
 
-        val thumbnailResult = try {
-            attemptWithThumbnailUtils(dataSource)
-        } catch (error: Throwable) {
-            android.util.Log.w(TAG, "ThumbnailUtils fallback failed for $dataSource", error)
-            null
-        }
-
-        if (thumbnailResult != null) {
-            return maybeScale(thumbnailResult, targetSizePx)
-        }
-
         val media3Result = try {
             attemptWithMedia3(dataSource, sanitizedFrameTimeUs)
         } catch (error: Throwable) {
@@ -128,6 +136,22 @@ internal class VideoFrameExtractor private constructor(private val appContext: C
         }
 
         throw IOException("Unable to extract frame for $dataSource")
+    }
+
+    private fun attemptWithContentResolverLoadThumbnail(context: Context, uri: Uri): Bitmap? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            return null
+        }
+        if (uri.scheme?.equals("content", ignoreCase = true) != true) {
+            return null
+        }
+        return runCatching {
+            context.contentResolver.loadThumbnail(
+                uri,
+                Size(DEFAULT_TARGET_SIZE, DEFAULT_TARGET_SIZE),
+                null,
+            )
+        }.getOrNull()
     }
 
     private fun attemptWithMediaMetadataRetriever(
@@ -395,8 +419,13 @@ internal class VideoFrameExtractor private constructor(private val appContext: C
         return Bitmap.createBitmap(bitmap, 0, 0, image.width, image.height)
     }
 
-    private fun <T> runWithTimeout(timeoutMs: Long, block: () -> T): T {
-        val future: Future<T> = decodeExecutor.submit(Callable(block))
+    private fun <T> runWithTimeout(timeoutMs: Long, block: () -> T): T? {
+        val future: Future<T> = try {
+            thumbnailExecutor.submit(Callable(block))
+        } catch (rejected: RejectedExecutionException) {
+            android.util.Log.d(TAG, "Thumbnail executor saturated; skipping frame extraction request")
+            return null
+        }
         return try {
             future.get(timeoutMs, TimeUnit.MILLISECONDS)
         } catch (timeout: TimeoutException) {
@@ -475,11 +504,15 @@ internal class VideoFrameExtractor private constructor(private val appContext: C
 
         private val threadId = AtomicInteger(0)
 
-        private val executor: ExecutorService by lazy {
-            Executors.newFixedThreadPool(MAX_CONCURRENT_DECODE_JOBS) { runnable ->
-                Thread(runnable, "VideoFrameDecode-${threadId.incrementAndGet()}").apply {
-                    priority = Thread.NORM_PRIORITY - 1
-                }
+        private val thumbnailExecutor = ThreadPoolExecutor(
+            MAX_CONCURRENT_DECODE_JOBS,
+            MAX_CONCURRENT_DECODE_JOBS,
+            30,
+            TimeUnit.SECONDS,
+            LinkedBlockingQueue<Runnable>(32),
+        ) { runnable: Runnable ->
+            Thread(runnable, "VideoFrameDecode-${threadId.incrementAndGet()}").apply {
+                priority = Thread.NORM_PRIORITY - 1
             }
         }
 
@@ -488,6 +521,4 @@ internal class VideoFrameExtractor private constructor(private val appContext: C
         }
     }
 
-    private val decodeExecutor: ExecutorService
-        get() = executor
 }
