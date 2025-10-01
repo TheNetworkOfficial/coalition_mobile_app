@@ -40,8 +40,8 @@ class VideoNative implements VideoNativeBridge {
   }) async {
     final result = await _ch.invokeMethod<String>('exportEdits', {
       'filePath': filePath,
-      'timeline': timelineJson,
-      'bitrate': targetBitrateBps,
+      'timelineJson': timelineJson,
+      'targetBitrateBps': targetBitrateBps,
     });
     return result ?? '';
   }
