@@ -86,7 +86,6 @@ class _VideoPickerPageState extends ConsumerState<VideoPickerPage> {
     if (!mounted) {
       return;
     }
-
     if (!permissionResult.granted) {
       _handlePermissionDenied(permissionResult);
       return;
@@ -150,7 +149,6 @@ class _VideoPickerPageState extends ConsumerState<VideoPickerPage> {
     if (!mounted) {
       return;
     }
-
     if (!mediaPermission.granted) {
       _handlePermissionDenied(mediaPermission);
       return;
