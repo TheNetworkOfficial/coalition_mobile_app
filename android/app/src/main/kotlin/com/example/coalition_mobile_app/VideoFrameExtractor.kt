@@ -9,13 +9,20 @@ import android.media.ThumbnailUtils
 import android.net.Uri
 import android.os.Build
 import android.os.CancellationSignal
+import android.os.Handler
+import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.provider.MediaStore
 import android.util.Size
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.muxer.Muxer
+import androidx.media3.transformer.Codec
 import androidx.media3.transformer.TransformationResult
 import androidx.media3.transformer.Transformer
+import com.google.common.collect.ImmutableList
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -191,90 +198,162 @@ internal class VideoFrameExtractor private constructor(private val appContext: C
         frameTimeUs: Long,
     ): Bitmap? {
         val prepared = dataSource.prepareLocalCopy(appContext)
-        val cleanup = prepared.cleanup
+        val cleanupAction = prepared.cleanup
         val latch = CountDownLatch(1)
         val result = AtomicReference<Bitmap?>()
         val failure = AtomicReference<Throwable?>()
         val finished = AtomicBoolean(false)
+        val transformerRef = AtomicReference<Transformer?>()
+        val output = createVideoTempFile(appContext, "frame_extract_", ".tmp")
 
-        try {
-            val transformer = FrameExtractionSupport.buildFrameExtractorTransformer(
-                appContext,
-                object : FrameExtractionSupport.Listener {
+        mainHandler.post {
+            if (finished.get()) {
+                return@post
+            }
+            try {
+                val frameListener = object : FrameExtractionSupport.Listener {
                     override fun onImageAvailable(image: Image) {
                         try {
                             result.compareAndSet(null, imageToBitmap(image))
                         } catch (error: Throwable) {
                             failure.compareAndSet(null, error)
                         } finally {
+                            try {
+                                image.close()
+                            } catch (_: Throwable) {
+                            }
                             if (finished.compareAndSet(false, true)) {
                                 latch.countDown()
                             }
                         }
                     }
-                },
-            )
-
-            transformer.addListener(
-                object : Transformer.Listener {
-                    override fun onTransformationError(mediaItem: MediaItem, exception: Exception) {
-                        failure.compareAndSet(null, exception)
-                        if (finished.compareAndSet(false, true)) {
-                            latch.countDown()
-                        }
-                    }
-
-                    override fun onTransformationCompleted(
-                        mediaItem: MediaItem,
-                        transformationResult: TransformationResult,
-                    ) {
-                        if (result.get() == null) {
-                            failure.compareAndSet(null, IOException("No frame extracted"))
-                        }
-                        if (finished.compareAndSet(false, true)) {
-                            latch.countDown()
-                        }
-                    }
-                },
-            )
-
-            val clipStartMs = max(0L, frameTimeUs / 1000)
-            val clipEndMs = clipStartMs + 1_000L
-            val mediaItemBuilder = MediaItem.Builder().setUri(prepared.uri)
-            mediaItemBuilder.setClippingConfiguration(
-                MediaItem.ClippingConfiguration.Builder()
-                    .setStartPositionMs(clipStartMs)
-                    .setEndPositionMs(clipEndMs)
-                    .build(),
-            )
-            val edited = androidx.media3.transformer.EditedMediaItem.Builder(mediaItemBuilder.build())
-                .setRemoveAudio(true)
-                .build()
-
-            val output = createVideoTempFile(appContext, "frame_extract_", ".tmp")
-            try {
-                transformer.start(edited, output.absolutePath)
-                if (!latch.await(5, TimeUnit.SECONDS)) {
-                    failure.compareAndSet(null, IOException("Timed out waiting for frame extraction"))
-                    finished.compareAndSet(false, true)
                 }
-            } finally {
-                transformer.cancel()
-                if (!output.delete()) {
-                    android.util.Log.d(TAG, "Temporary transformer output ${output.absolutePath} could not be deleted")
+
+                val encoderFactoryClass = Class.forName(
+                    "com.example.coalition_mobile_app.FrameExtractionSupport\$ImageReaderEncoder\$Factory",
+                )
+                val encoderFactoryConstructor =
+                    encoderFactoryClass.getDeclaredConstructor(FrameExtractionSupport.Listener::class.java)
+                encoderFactoryConstructor.isAccessible = true
+                val encoderFactory =
+                    encoderFactoryConstructor.newInstance(frameListener) as Codec.EncoderFactory
+
+                val muxerFactoryClass = Class.forName(
+                    "com.example.coalition_mobile_app.FrameExtractionSupport\$NoOpMuxer\$Factory",
+                )
+                val muxerFactoryConstructor = muxerFactoryClass.getDeclaredConstructor(
+                    ImmutableList::class.java,
+                    ImmutableList::class.java,
+                )
+                muxerFactoryConstructor.isAccessible = true
+                val muxerFactory = muxerFactoryConstructor.newInstance(
+                    ImmutableList.of(MimeTypes.AUDIO_AAC),
+                    ImmutableList.of(MimeTypes.VIDEO_H264),
+                ) as Muxer.Factory
+
+                val transformer = Transformer.Builder(appContext)
+                    .setApplicationLooper(Looper.getMainLooper())
+                    .experimentalSetTrimOptimizationEnabled(false)
+                    .setEncoderFactory(encoderFactory)
+                    .setMaxDelayBetweenMuxerSamplesMs(C.TIME_UNSET)
+                    .setMuxerFactory(muxerFactory)
+                    .setAudioMimeType(MimeTypes.AUDIO_AAC)
+                    .setVideoMimeType(MimeTypes.VIDEO_H264)
+                    .experimentalSetMaxFramesInEncoder(1)
+                    .build()
+
+                transformerRef.set(transformer)
+
+                transformer.addListener(
+                    object : Transformer.Listener {
+                        override fun onTransformationError(mediaItem: MediaItem, exception: Exception) {
+                            failure.compareAndSet(null, exception)
+                            if (finished.compareAndSet(false, true)) {
+                                latch.countDown()
+                            }
+                        }
+
+                        override fun onTransformationCompleted(
+                            mediaItem: MediaItem,
+                            transformationResult: TransformationResult,
+                        ) {
+                            if (result.get() == null) {
+                                failure.compareAndSet(null, IOException("No frame extracted"))
+                            }
+                            if (finished.compareAndSet(false, true)) {
+                                latch.countDown()
+                            }
+                        }
+                    },
+                )
+
+                val clipStartMs = max(0L, frameTimeUs / 1000)
+                val clipEndMs = clipStartMs + 1_000L
+                val mediaItemBuilder = MediaItem.Builder().setUri(prepared.uri)
+                mediaItemBuilder.setClippingConfiguration(
+                    MediaItem.ClippingConfiguration.Builder()
+                        .setStartPositionMs(clipStartMs)
+                        .setEndPositionMs(clipEndMs)
+                        .build(),
+                )
+                val edited = androidx.media3.transformer.EditedMediaItem.Builder(mediaItemBuilder.build())
+                    .setRemoveAudio(true)
+                    .build()
+
+                transformer.start(edited, output.absolutePath)
+            } catch (error: Throwable) {
+                failure.compareAndSet(null, error)
+                if (finished.compareAndSet(false, true)) {
+                    latch.countDown()
                 }
             }
+        }
+
+        val completed = try {
+            latch.await(3, TimeUnit.SECONDS)
         } catch (interrupted: InterruptedException) {
             Thread.currentThread().interrupt()
             failure.compareAndSet(null, interrupted)
-        } catch (error: Throwable) {
-            failure.compareAndSet(null, error)
-        } finally {
-            cleanup?.invoke()
+            false
         }
 
-        failure.get()?.let { throw it }
-        return result.get()
+        if (!completed) {
+            failure.compareAndSet(null, TimeoutException("Timed out waiting for frame extraction"))
+            if (finished.compareAndSet(false, true)) {
+                latch.countDown()
+            }
+        }
+
+        val cancelPosted = mainHandler.post {
+            transformerRef.get()?.cancel()
+            if (!output.delete()) {
+                android.util.Log.d(
+                    TAG,
+                    "Temporary transformer output ${output.absolutePath} could not be deleted",
+                )
+            }
+            cleanupAction?.let { action ->
+                decodeExecutor.execute { action() }
+            }
+        }
+
+        if (!cancelPosted) {
+            cleanupAction?.let { action ->
+                decodeExecutor.execute { action() }
+            }
+            if (!output.delete()) {
+                android.util.Log.d(
+                    TAG,
+                    "Temporary transformer output ${output.absolutePath} could not be deleted",
+                )
+            }
+        }
+
+        return if (failure.get() == null && completed) {
+            result.get()
+        } else {
+            null
+        }
     }
 
     private fun openUriForRetriever(uri: Uri): Pair<ParcelFileDescriptor?, File?> {
@@ -430,6 +509,8 @@ internal class VideoFrameExtractor private constructor(private val appContext: C
             return VideoFrameExtractor(context.applicationContext)
         }
     }
+
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private val decodeExecutor: ExecutorService
         get() = executor
