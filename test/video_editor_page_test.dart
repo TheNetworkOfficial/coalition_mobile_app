@@ -69,6 +69,7 @@ void main() {
     when(() => mockController.maxTrim).thenAnswer((_) => currentMaxTrim);
     when(() => mockController.minCrop).thenAnswer((_) => currentMinCrop);
     when(() => mockController.maxCrop).thenAnswer((_) => currentMaxCrop);
+    when(() => mockController.initialized).thenReturn(true);
     when(() => mockController.isPlaying).thenReturn(false);
     when(() => mockController.video).thenReturn(mockVideo);
     when(() => mockController.selectedCoverNotifier).thenReturn(coverNotifier);
