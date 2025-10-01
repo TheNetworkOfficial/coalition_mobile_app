@@ -23,6 +23,8 @@ import androidx.media3.transformer.VideoEncoderSettings
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -33,6 +35,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.OptIn
 
 private const val CHANNEL_NAME = "video_native"
+private const val TAG = "VideoNative"
 
 class VideoNative(
     private val context: Context,
@@ -95,14 +98,47 @@ class VideoNative(
     }
 
     private fun handleExportEdits(call: MethodCall, result: MethodChannel.Result) {
-        val filePath = call.argument<String>("filePath")
-        val timeline = call.argument<Map<String, Any?>>("timelineJson")
-        val targetBitrate = call.argument<Number>("targetBitrateBps")?.toInt()
+        // Defensive parsing + logging so we can see what arguments arrived from Dart.
+        try {
+            android.util.Log.d(TAG, "handleExportEdits: raw call.arguments=${call.arguments}")
+        } catch (_: Throwable) {
+        }
+
+        // Try to read a top-level map first (some codecs decode into LinkedHashMap)
+        val rawArgs = call.arguments as? Map<*, *>
+        val filePath = (rawArgs?.get("filePath") as? String) ?: call.argument<String>("filePath")
+        // timelineJson may be passed as a Map or as a JSON string; handle both.
+        var timeline: Map<String, Any?>? = null
+        val timelineRaw = rawArgs?.get("timelineJson") ?: call.argument<Any>("timelineJson")
+        if (timelineRaw is Map<*, *>) {
+            // Convert keys to String and preserve values as Any?
+            val m = mutableMapOf<String, Any?>()
+            for ((k, v) in timelineRaw) {
+                m[k.toString()] = v
+            }
+            timeline = m
+        } else if (timelineRaw is String) {
+            try {
+                val obj = JSONObject(timelineRaw)
+                timeline = obj.toMap()
+            } catch (_: Exception) {
+                // leave timeline null
+            }
+        }
+        val targetBitrate = ((rawArgs?.get("targetBitrateBps") as? Number)?.toInt()
+            ?: call.argument<Number>("targetBitrateBps")?.toInt())
 
         if (filePath.isNullOrBlank() || timeline == null || targetBitrate == null) {
+            android.util.Log.w(TAG, "Missing export arguments: filePath=${filePath}, timeline=${timeline}, targetBitrate=${targetBitrate}")
             result.error("bad_args", "Missing export arguments", null)
             return
         }
+
+        // Log a compact preview of the parsed timeline for diagnostics.
+        try {
+            val preview = timeline.toString().take(200)
+            android.util.Log.d(TAG, "handleExportEdits: parsed timeline preview=$preview")
+        } catch (_: Throwable) {}
 
         executor.execute {
             try {
@@ -175,6 +211,7 @@ class VideoNative(
                 mediaItem: MediaItem,
                 transformationResult: TransformationResult,
             ) {
+                android.util.Log.i(TAG, "exportEdits: transformation completed for mediaItem=$mediaItem")
                 latch.countDown()
             }
 
@@ -182,6 +219,7 @@ class VideoNative(
                 mediaItem: MediaItem,
                 exception: TransformationException,
             ) {
+                android.util.Log.e(TAG, "exportEdits: transformation error for mediaItem=$mediaItem: ${exception.message}", exception)
                 exportError = exception
                 latch.countDown()
             }
@@ -211,7 +249,8 @@ class VideoNative(
             this.transformer = transformer
         }
 
-        transformer.start(editedMediaItem, outputFile.absolutePath)
+    android.util.Log.i(TAG, "exportEdits: starting transformer for filePath=$filePath output=${outputFile.absolutePath} targetBitrate=$targetBitrate")
+    transformer.start(editedMediaItem, outputFile.absolutePath)
 
         try {
             latch.await()
@@ -228,6 +267,7 @@ class VideoNative(
         }
 
         exportError?.let { throw it }
+        android.util.Log.i(TAG, "exportEdits: finished successfully, output=${outputFile.absolutePath}")
         return outputFile.absolutePath
     }
 
@@ -236,10 +276,12 @@ class VideoNative(
         filePath: String,
         timeline: Map<String, Any?>,
     ): EditedMediaItem {
+        android.util.Log.d(TAG, "buildEditedMediaItem: timeline=$timeline")
         val mediaItemBuilder = MediaItem.Builder().setUri(Uri.fromFile(File(filePath)))
 
         val trimMap = timeline["trim"] as? Map<*, *>
         if (trimMap != null) {
+            android.util.Log.d(TAG, "buildEditedMediaItem: trimMap=$trimMap")
             val clipBuilder = MediaItem.ClippingConfiguration.Builder()
             (trimMap["startSeconds"] as? Number)?.let {
                 clipBuilder.setStartPositionMs((it.toDouble() * 1000).toLong())
@@ -256,31 +298,56 @@ class VideoNative(
         val videoEffects = mutableListOf<Effect>()
 
         (timeline["crop"] as? Map<*, *>)?.let { crop ->
-            val left = (crop["left"] as? Number)?.toFloat() ?: 0f
-            val top = (crop["top"] as? Number)?.toFloat() ?: 0f
-            val right = (crop["right"] as? Number)?.toFloat() ?: 1f
-            val bottom = (crop["bottom"] as? Number)?.toFloat() ?: 1f
-            videoEffects += Crop(left, top, right, bottom)
+            try {
+                android.util.Log.d(TAG, "buildEditedMediaItem: crop=$crop")
+                val left = (crop["left"] as? Number)?.toFloat() ?: 0f
+                val top = (crop["top"] as? Number)?.toFloat() ?: 0f
+                val right = (crop["right"] as? Number)?.toFloat() ?: 1f
+                val bottom = (crop["bottom"] as? Number)?.toFloat() ?: 1f
+                android.util.Log.d(TAG, "buildEditedMediaItem: crop values left=$left top=$top right=$right bottom=$bottom")
+                videoEffects += Crop(left, top, right, bottom)
+            } catch (iae: IllegalArgumentException) {
+                android.util.Log.e(TAG, "buildEditedMediaItem: Crop construction failed with crop=$crop", iae)
+                throw iae
+            } catch (t: Throwable) {
+                android.util.Log.e(TAG, "buildEditedMediaItem: Unexpected error building Crop with crop=$crop", t)
+                throw t
+            }
         }
 
         (timeline["scale"] as? Map<*, *>)?.let { scale ->
-            val scaleX = (scale["x"] as? Number)?.toFloat()
-                ?: (scale["scaleX"] as? Number)?.toFloat()
-                ?: (scale["width"] as? Number)?.toFloat()
-                ?: 1f
-            val scaleY = (scale["y"] as? Number)?.toFloat()
-                ?: (scale["scaleY"] as? Number)?.toFloat()
-                ?: (scale["height"] as? Number)?.toFloat()
-                ?: 1f
-            val rotation = (scale["rotationDegrees"] as? Number)?.toFloat() ?: 0f
-            videoEffects += ScaleAndRotateTransformation.Builder()
-                .setScale(scaleX, scaleY)
-                .setRotationDegrees(rotation)
-                .build()
+            try {
+                android.util.Log.d(TAG, "buildEditedMediaItem: scale=$scale")
+                val scaleX = (scale["x"] as? Number)?.toFloat()
+                    ?: (scale["scaleX"] as? Number)?.toFloat()
+                    ?: (scale["width"] as? Number)?.toFloat()
+                    ?: 1f
+                val scaleY = (scale["y"] as? Number)?.toFloat()
+                    ?: (scale["scaleY"] as? Number)?.toFloat()
+                    ?: (scale["height"] as? Number)?.toFloat()
+                    ?: 1f
+                val rotation = (scale["rotationDegrees"] as? Number)?.toFloat() ?: 0f
+                android.util.Log.d(TAG, "buildEditedMediaItem: scale values scaleX=$scaleX scaleY=$scaleY rotation=$rotation")
+                videoEffects += ScaleAndRotateTransformation.Builder()
+                    .setScale(scaleX, scaleY)
+                    .setRotationDegrees(rotation)
+                    .build()
+            } catch (iae: IllegalArgumentException) {
+                android.util.Log.e(TAG, "buildEditedMediaItem: Scale/Rotate construction failed with scale=$scale", iae)
+                throw iae
+            } catch (t: Throwable) {
+                android.util.Log.e(TAG, "buildEditedMediaItem: Unexpected error building Scale/Rotate with scale=$scale", t)
+                throw t
+            }
         }
 
         (timeline["effects"] as? List<*>)?.forEach { effect ->
-            parseEffect(effect)?.let { videoEffects += it }
+            try {
+                parseEffect(effect)?.let { videoEffects += it }
+            } catch (t: Throwable) {
+                android.util.Log.e(TAG, "buildEditedMediaItem: parseEffect failed for effect=$effect", t)
+                // continue; skip invalid effects
+            }
         }
 
         if (videoEffects.isNotEmpty()) {
@@ -326,5 +393,38 @@ class VideoNative(
             directory.mkdirs()
         }
         return File.createTempFile(prefix, suffix, directory)
+    }
+
+    // Helpers to convert org.json types into Kotlin collections.
+    private fun JSONObject.toMap(): Map<String, Any?> {
+        val map = mutableMapOf<String, Any?>()
+        val keys = this.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            val value = this.get(key)
+            map[key] = when (value) {
+                is JSONObject -> value.toMap()
+                is JSONArray -> value.toList()
+                JSONObject.NULL -> null
+                else -> value
+            }
+        }
+        return map
+    }
+
+    private fun JSONArray.toList(): List<Any?> {
+        val list = mutableListOf<Any?>()
+        for (i in 0 until this.length()) {
+            val value = this.get(i)
+            list.add(
+                when (value) {
+                    is JSONObject -> value.toMap()
+                    is JSONArray -> value.toList()
+                    JSONObject.NULL -> null
+                    else -> value
+                }
+            )
+        }
+        return list
     }
 }

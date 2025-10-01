@@ -56,16 +56,35 @@ final class VideoNative: NSObject {
       guard
         let args = call.arguments as? [String: Any],
         let filePath = args["filePath"] as? String,
-        let timeline = args["timelineJson"] as? [String: Any],
         let targetBitrate = args["targetBitrateBps"] as? Int
       else {
         result(FlutterError(code: "bad_args", message: "Missing export arguments", details: nil))
         return
       }
 
+      NSLog("VideoNative(iOS): exportEdits called - filePath=\(filePath) targetBitrate=\(targetBitrate) rawTimeline=")
+
+      // timelineJson may be sent as a JSON string or as a map.
+      var timeline: [String: Any]? = nil
+      if let t = args["timelineJson"] as? [String: Any] {
+        timeline = t
+      } else if let tstr = args["timelineJson"] as? String {
+        if let data = tstr.data(using: .utf8) {
+          timeline = (try? JSONSerialization.jsonObject(with: data, options: [])) as? [String: Any]
+        }
+      }
+
+      guard timeline != nil else {
+        result(FlutterError(code: "bad_args", message: "Missing export arguments (timeline)", details: nil))
+        return
+      }
+
       workQueue.async {
         self.perform(result: result) {
-          try self.exportEdits(filePath: filePath, timeline: timeline, targetBitrate: targetBitrate)
+          NSLog("VideoNative(iOS): exportEdits starting for filePath=\(filePath), output will be temporary file")
+          let out = try self.exportEdits(filePath: filePath, timeline: timeline, targetBitrate: targetBitrate)
+          NSLog("VideoNative(iOS): exportEdits completed, output=\(out)")
+          return out
         }
       }
 
