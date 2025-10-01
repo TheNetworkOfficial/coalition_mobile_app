@@ -232,8 +232,7 @@ class _VideoEditorPageState extends ConsumerState<VideoEditorPage> {
               height: 200, child: Center(child: Text('Video Placeholder'))),
           Text('Trim start: ${timeline.trimStartMs}'),
           Text('Trim end: ${timeline.trimEndMs}'),
-          Text(
-              'Cover: ${timeline.coverTimeMs != null ? timeline.coverTimeMs : -1}'),
+          Text('Cover: ${timeline.coverTimeMs}'),
         ],
       );
     }

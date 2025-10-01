@@ -47,19 +47,22 @@ class VideoTimeline {
 
   Map<String, dynamic> toJson() {
     final crop = cropRect;
-    final includeCrop =
-        crop != null && _hasMeaningfulArea(crop) && !_isApproximatelyFullFrame(crop);
-
+    Map<String, double>? cropPayload;
+    if (crop != null &&
+        _hasMeaningfulArea(crop) &&
+        !_isApproximatelyFullFrame(crop)) {
+      cropPayload = {
+        'left': crop.left,
+        'top': crop.top,
+        'right': crop.right,
+        'bottom': crop.bottom,
+      };
+    }
+    
     return {
       'trimStartMs': trimStartMs,
       'trimEndMs': trimEndMs,
-      if (includeCrop)
-        'cropRect': {
-          'left': crop!.left,
-          'top': crop.top,
-          'right': crop.right,
-          'bottom': crop.bottom,
-        },
+      if (cropPayload != null) 'cropRect': cropPayload,
       'speed': speed,
       'coverTimeMs': coverTimeMs,
     };
@@ -69,20 +72,23 @@ class VideoTimeline {
     final trimStartSeconds = trimStartMs / 1000.0;
     final trimEndSeconds = trimEndMs / 1000.0;
     final crop = cropRect;
-    final includeCrop =
-        crop != null && _hasMeaningfulArea(crop) && !_isApproximatelyFullFrame(crop);
+    Map<String, double>? cropPayload;
+    if (crop != null &&
+        _hasMeaningfulArea(crop) &&
+        !_isApproximatelyFullFrame(crop)) {
+      cropPayload = {
+        'left': crop.left,
+        'top': crop.top,
+        'right': crop.right,
+        'bottom': crop.bottom,
+      };
+    }
     return {
       'trim': {
         'startSeconds': trimStartSeconds,
         'endSeconds': trimEndSeconds,
       },
-      if (includeCrop)
-        'crop': {
-          'left': crop!.left,
-          'top': crop.top,
-          'right': crop.right,
-          'bottom': crop.bottom,
-        },
+      if (cropPayload != null) 'crop': cropPayload,
       if (speed != 1.0) 'speed': speed,
     };
   }
