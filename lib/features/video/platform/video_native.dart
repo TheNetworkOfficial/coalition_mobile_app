@@ -50,19 +50,44 @@ class VideoNative implements VideoNativeBridge {
     try {
       final crop = mutableTimeline['crop'] as Map<String, dynamic>?;
       if (crop != null) {
-        final left = (crop['left'] as num?)?.toDouble() ?? 0.0;
-        final top = (crop['top'] as num?)?.toDouble() ?? 0.0;
-        var right = (crop['right'] as num?)?.toDouble() ?? 1.0;
-        var bottom = (crop['bottom'] as num?)?.toDouble() ?? 1.0;
-        const eps = 1e-3;
-  if (right <= left) right = (left + eps).clamp(0.0, 1.0);
-  if (bottom <= top) bottom = (top + eps).clamp(0.0, 1.0);
-        mutableTimeline['crop'] = {
-          'left': left,
-          'top': top,
-          'right': right,
-          'bottom': bottom,
-        };
+        final double left =
+            ((crop['left'] as num?)?.toDouble() ?? 0.0).clamp(0.0, 1.0).toDouble();
+        final double top =
+            ((crop['top'] as num?)?.toDouble() ?? 0.0).clamp(0.0, 1.0).toDouble();
+        var right =
+            ((crop['right'] as num?)?.toDouble() ?? 1.0).clamp(0.0, 1.0).toDouble();
+        var bottom =
+            ((crop['bottom'] as num?)?.toDouble() ?? 1.0).clamp(0.0, 1.0).toDouble();
+        const eps = 1e-4;
+
+        var width = right - left;
+        var height = bottom - top;
+        final isFullFrame =
+            left <= eps && top <= eps && (1.0 - right) <= eps && (1.0 - bottom) <= eps;
+
+        if (width <= eps || height <= eps || isFullFrame) {
+          mutableTimeline.remove('crop');
+        } else {
+          if (right <= left) {
+            right = (left + eps).clamp(0.0, 1.0).toDouble();
+          }
+          if (bottom <= top) {
+            bottom = (top + eps).clamp(0.0, 1.0).toDouble();
+          }
+
+          width = right - left;
+          height = bottom - top;
+          if (width <= eps || height <= eps) {
+            mutableTimeline.remove('crop');
+          } else {
+            mutableTimeline['crop'] = {
+              'left': left,
+              'top': top,
+              'right': right,
+              'bottom': bottom,
+            };
+          }
+        }
       }
     } catch (_) {}
 
