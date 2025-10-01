@@ -75,9 +75,9 @@ class HomeShell extends ConsumerWidget {
     for (var i = 0; i < _destinations.length; i++) {
       if (i == _createDestinationIndex) {
         destinations.add(
-          NavigationDestination(
-            icon: const Icon(Icons.add_circle_outline, size: 30),
-            selectedIcon: const Icon(Icons.add_circle, size: 30),
+          const NavigationDestination(
+            icon: Icon(Icons.add_circle_outline, size: 30),
+            selectedIcon: Icon(Icons.add_circle, size: 30),
             label: 'Create',
             tooltip: 'Create',
           ),

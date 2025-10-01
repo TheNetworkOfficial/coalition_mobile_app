@@ -3,23 +3,18 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../../../core/utils/media_type_utils.dart';
-import '../../domain/event.dart';
 
 class EventMediaPreview extends StatelessWidget {
   const EventMediaPreview({
     required this.mediaUrl,
-    required this.mediaType,
     required this.aspectRatio,
     this.coverImagePath,
-    this.autoplay = false,
     super.key,
   });
 
   final String mediaUrl;
-  final EventMediaType? mediaType;
   final double aspectRatio;
   final String? coverImagePath;
-  final bool autoplay;
 
   @override
   Widget build(BuildContext context) {
@@ -34,12 +29,6 @@ class EventMediaPreview extends StatelessWidget {
   }
 
   Widget _buildMedia() {
-    if (mediaType == EventMediaType.video) {
-      return const _EventPreviewPlaceholder(
-        message: 'Video preview unavailable',
-      );
-    }
-
     final imageSource = isLikelyImageSource(coverImagePath)
         ? coverImagePath
         : (isLikelyImageSource(mediaUrl) ? mediaUrl : null);
@@ -77,7 +66,7 @@ class _EventPreviewPlaceholder extends StatelessWidget {
     final label = message ?? 'No media available';
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceVariant,
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
       ),
       child: Center(
         child: Padding(
@@ -87,7 +76,8 @@ class _EventPreviewPlaceholder extends StatelessWidget {
             style: Theme.of(context)
                 .textTheme
                 .bodyMedium
-                ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                ?.copyWith(color: Theme.of(context).colorScheme.onSurface),
+
             textAlign: TextAlign.center,
           ),
         ),

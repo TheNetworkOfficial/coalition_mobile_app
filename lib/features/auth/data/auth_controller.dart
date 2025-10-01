@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_riverpod/legacy.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:uuid/uuid.dart';
 
@@ -74,12 +73,11 @@ class GoogleSignInResult {
 }
 
 class AuthController extends StateNotifier<AuthState> {
-  AuthController(this._ref, this._store, this._googleSignIn)
+  AuthController(this._store, this._googleSignIn)
       : super(const AuthState(isLoading: true)) {
     _initialization = _initialize();
   }
 
-  final Ref _ref;
   final LocalUserStore _store;
   final GoogleSignIn _googleSignIn;
 
@@ -591,5 +589,5 @@ final authControllerProvider =
     StateNotifierProvider<AuthController, AuthState>((ref) {
   final store = ref.watch(localUserStoreProvider);
   final googleSignIn = ref.watch(googleSignInProvider);
-  return AuthController(ref, store, googleSignIn);
+  return AuthController(store, googleSignIn);
 });

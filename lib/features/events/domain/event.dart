@@ -1,9 +1,6 @@
 import 'dart:math' as math;
 
-
 enum EventRsvpStatus { confirmed, cancelled }
-
-enum EventMediaType { image, video }
 
 class EventAttendee {
   const EventAttendee({
@@ -93,7 +90,6 @@ class CoalitionEvent {
     this.tags = const <String>[],
     this.timeSlots = const <EventTimeSlot>[],
     this.mediaUrl,
-    this.mediaType,
     this.coverImagePath,
     this.mediaAspectRatio,
   });
@@ -109,7 +105,6 @@ class CoalitionEvent {
   final List<String> tags;
   final List<EventTimeSlot> timeSlots;
   final String? mediaUrl;
-  final EventMediaType? mediaType;
   final String? coverImagePath;
   final double? mediaAspectRatio;
 
@@ -125,7 +120,6 @@ class CoalitionEvent {
     List<EventTimeSlot>? timeSlots,
     String? mediaUrl,
     Object? coverImagePath = _sentinel,
-    EventMediaType? mediaType,
     double? mediaAspectRatio,
   }) {
     return CoalitionEvent(
@@ -143,7 +137,6 @@ class CoalitionEvent {
       coverImagePath: coverImagePath == _sentinel
           ? this.coverImagePath
           : coverImagePath as String?,
-      mediaType: mediaType ?? this.mediaType,
       mediaAspectRatio: mediaAspectRatio ?? this.mediaAspectRatio,
     );
   }

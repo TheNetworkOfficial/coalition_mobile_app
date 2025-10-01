@@ -338,10 +338,8 @@ class _EventHeader extends StatelessWidget {
         if (media != null && media.isNotEmpty) ...[
           EventMediaPreview(
             mediaUrl: media,
-            mediaType: event.mediaType,
             aspectRatio: event.mediaAspectRatio ?? 16 / 9,
             coverImagePath: event.coverImagePath,
-            autoplay: true,
           ),
           const SizedBox(height: 20),
         ],
