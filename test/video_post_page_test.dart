@@ -117,6 +117,9 @@ class _StubVideoNative extends VideoNativeBridge {
 
   @override
   Future<void> cancelExport() async {}
+
+  @override
+  Future<void> persistUriPermission(String uri) async {}
 }
 
 void main() {
