@@ -95,9 +95,3 @@ internal class CoalitionParcelFileDescriptorVideoDecoder(
         }
     }
 }
-
-internal fun Registry.registerCoalitionVideoDecoders(context: Context, glide: Glide) {
-    val bitmapPool = glide.bitmapPool
-    val parcelDecoder = CoalitionParcelFileDescriptorVideoDecoder(context, bitmapPool)
-    replace(ParcelFileDescriptor::class.java, Bitmap::class.java, parcelDecoder)
-}

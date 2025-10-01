@@ -319,7 +319,7 @@ class _VideoPickerPageState extends ConsumerState<VideoPickerPage> {
     if (parsed == null) {
       return 0;
     }
-    if (parsed.scheme?.toLowerCase() != 'content') {
+    if (parsed.scheme.toLowerCase() != 'content') {
       return 0;
     }
 

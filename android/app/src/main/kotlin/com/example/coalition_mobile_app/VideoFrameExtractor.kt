@@ -215,20 +215,55 @@ internal class VideoFrameExtractor private constructor(private val appContext: C
         val cleanup = prepared.cleanup
         return try {
             val uri = prepared.uri
-            val isContentUri = uri.scheme?.equals("content", ignoreCase = true) == true
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && isContentUri) {
-                val cancellationSignal: CancellationSignal? = null
-                runCatching {
-                    ThumbnailUtils.createVideoThumbnail(
-                        appContext.contentResolver,
-                        uri,
-                        Size(DEFAULT_TARGET_SIZE, DEFAULT_TARGET_SIZE),
-                        cancellationSignal,
+            val scheme = uri.scheme?.lowercase()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && scheme == "content") {
+                val method = try {
+                    ThumbnailUtils::class.java.getDeclaredMethod(
+                        "createVideoThumbnail",
+                        android.content.ContentResolver::class.java,
+                        Uri::class.java,
+                        Size::class.java,
+                        CancellationSignal::class.java,
                     )
-                }.getOrNull()
-            } else {
-                null
+                } catch (noSuchMethod: NoSuchMethodException) {
+                    android.util.Log.d(
+                        TAG,
+                        "ThumbnailUtils content resolver overload not available on this platform",
+                        noSuchMethod,
+                    )
+                    null
+                }
+
+                if (method != null) {
+                    return runCatching {
+                        method.invoke(
+                            null,
+                            appContext.contentResolver,
+                            uri,
+                            Size(DEFAULT_TARGET_SIZE, DEFAULT_TARGET_SIZE),
+                            null,
+                        ) as? Bitmap
+                    }.getOrNull()
+                }
             }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && scheme == "file") {
+                val path = uri.path
+                if (!path.isNullOrEmpty()) {
+                    val file = File(path)
+                    if (file.exists()) {
+                        return runCatching {
+                            ThumbnailUtils.createVideoThumbnail(
+                                file,
+                                Size(DEFAULT_TARGET_SIZE, DEFAULT_TARGET_SIZE),
+                                null,
+                            )
+                        }.getOrNull()
+                    }
+                }
+            }
+
+            null
         } finally {
             cleanup?.invoke()
         }

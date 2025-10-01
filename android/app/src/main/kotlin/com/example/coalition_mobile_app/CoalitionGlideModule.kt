@@ -17,6 +17,5 @@ class CoalitionGlideModule : AppGlideModule() {
                 glide.bitmapPool,
             ),
         )
-        registry.registerCoalitionVideoDecoders(context, glide)
     }
 }
